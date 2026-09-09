@@ -1,0 +1,6 @@
+{
+  "name": "Спортивный Город 54",
+  "description": "Городской спортивный портал Новосибирска: интерактивное 3D-расписание занятий по всем 10 районам города, карта площадок, медиатека, импорт из Excel и Word, панель управления.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

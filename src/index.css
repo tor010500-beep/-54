@@ -1,0 +1,91 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-display: 'Cabinet Grotesk', 'Plus Jakarta Sans', sans-serif;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+  }
+
+  /* Accessibility Mode overrides */
+  body.accessibility-high-contrast {
+    background-color: #000000 !important;
+    color: #ffffff !important;
+  }
+  body.accessibility-high-contrast * {
+    border-color: #ffffff !important;
+  }
+  body.accessibility-high-contrast button,
+  body.accessibility-high-contrast a,
+  body.accessibility-high-contrast input,
+  body.accessibility-high-contrast select {
+    outline: 2px solid #ffffff !important;
+  }
+
+  body.accessibility-large-text {
+    font-size: 120% !important;
+  }
+  body.accessibility-xlarge-text {
+    font-size: 140% !important;
+  }
+
+  body.accessibility-no-animations * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* 3D Card Depth & Perspective Utilities */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.transform-style-3d {
+  transform-style: preserve-3d;
+}
+
+.backface-hidden {
+  backface-visibility: hidden;
+}
+
+.card-tilt-glow {
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(37, 99, 235, 0.12), transparent 70%);
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.glass-panel-dark {
+  background: rgba(15, 23, 42, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom modern scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
