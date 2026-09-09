@@ -7,6 +7,13 @@ import { createDumbbellMesh } from './Dumbbell.ts';
 
 export type WorkoutMode = 'cardio' | 'curls' | 'squats' | 'warmup';
 
+const getPublicAssetUrl = (filename: string) => {
+  const base = ((import.meta as any)?.env?.BASE_URL as string) || './';
+  const cleanBase = base.endsWith('/') ? base : `${base}/`;
+  const cleanFile = filename.startsWith('/') ? filename.slice(1) : filename;
+  return `${cleanBase}${cleanFile}`;
+};
+
 interface AthleteModelProps {
   currentMode: WorkoutMode;
   speed?: number;
@@ -21,8 +28,8 @@ export const AthleteModel: React.FC<AthleteModelProps> = ({
   onRepUpdate,
 }) => {
   const groupRef = useRef<THREE.Group>(null);
-  const gltf = useGLTF('/Michelle.glb');
-  const limeTexture = useTexture('/michelle_lime.png');
+  const gltf = useGLTF(getPublicAssetUrl('Michelle.glb'));
+  const limeTexture = useTexture(getPublicAssetUrl('michelle_lime.png'));
 
   // Clone scene to prevent mutating the cached GLTF instance
   const clonedScene = useMemo(() => {
@@ -367,5 +374,9 @@ export const AthleteModel: React.FC<AthleteModelProps> = ({
 };
 
 // Pre-load the gltf and texture assets
-useGLTF.preload('/Michelle.glb');
-useTexture.preload('/michelle_lime.png');
+try {
+  useGLTF.preload(getPublicAssetUrl('Michelle.glb'));
+  useTexture.preload(getPublicAssetUrl('michelle_lime.png'));
+} catch {
+  // Graceful preload catch
+}
