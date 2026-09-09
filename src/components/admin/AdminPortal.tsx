@@ -45,6 +45,8 @@ import {
 } from '../../types/index.ts';
 import { ScheduleEditModal } from './ScheduleEditModal.tsx';
 import { ScheduleChangeModal } from './ScheduleChangeModal.tsx';
+import { NewsEditModal } from './NewsEditModal.tsx';
+import { INITIAL_NEWS } from '../../data/initialData.ts';
 
 interface AdminPortalProps {
   onClose: () => void;
@@ -96,6 +98,12 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   const [isChangesModalOpen, setIsChangesModalOpen] = useState(false);
   const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
 
+  // News management state
+  const [editingNews, setEditingNews] = useState<NewsItem | null>(null);
+  const [isNewsModalOpen, setIsNewsModalOpen] = useState(false);
+  const [newsSearch, setNewsSearch] = useState('');
+  const [newsFilterCategory, setNewsFilterCategory] = useState('Все');
+
   // Import Engine State
   const [importStep, setImportStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -113,7 +121,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
   // Fetch all initial admin data
   const refreshAdminData = async () => {
     try {
-      const [schRes, venRes, distRes, newsRes, medRes, histRes, stRes, setRes] = await Promise.all([
+      const [schRes, venRes, distRes, newsRes, medRes, histRes, stRes, setRes] = await Promise.allSettled([
         fetch('/api/schedules'),
         fetch('/api/locations'),
         fetch('/api/districts'),
@@ -124,22 +132,171 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
         fetch('/api/settings')
       ]);
 
-      if (schRes.ok) setSchedules(await schRes.json());
-      if (venRes.ok) setVenues(await venRes.json());
-      if (distRes.ok) setDistricts(await distRes.json());
-      if (newsRes.ok) setNewsList(await newsRes.json());
-      if (medRes.ok) setMediaList(await medRes.json());
-      if (histRes.ok) setImportHistory(await histRes.json());
-      if (stRes.ok) setStats(await stRes.json());
-      if (setRes.ok) setSettings(await setRes.json());
+      if (schRes.status === 'fulfilled' && schRes.value.ok) {
+        const d = await schRes.value.json().catch(() => null);
+        if (d) setSchedules(d);
+      }
+      if (venRes.status === 'fulfilled' && venRes.value.ok) {
+        const d = await venRes.value.json().catch(() => null);
+        if (d) setVenues(d);
+      }
+      if (distRes.status === 'fulfilled' && distRes.value.ok) {
+        const d = await distRes.value.json().catch(() => null);
+        if (d) setDistricts(d);
+      }
+      if (newsRes.status === 'fulfilled' && newsRes.value.ok) {
+        const d = await newsRes.value.json().catch(() => null);
+        if (d) {
+          setNewsList(d);
+          try { localStorage.setItem('nsk_sport54_news', JSON.stringify(d)); } catch {}
+        }
+      } else {
+        try {
+          const saved = localStorage.getItem('nsk_sport54_news');
+          if (saved) {
+            setNewsList(JSON.parse(saved));
+          } else {
+            setNewsList(INITIAL_NEWS);
+          }
+        } catch {
+          setNewsList(INITIAL_NEWS);
+        }
+      }
+      if (medRes.status === 'fulfilled' && medRes.value.ok) {
+        const d = await medRes.value.json().catch(() => null);
+        if (d) setMediaList(d);
+      }
+      if (histRes.status === 'fulfilled' && histRes.value.ok) {
+        const d = await histRes.value.json().catch(() => null);
+        if (d) setImportHistory(d);
+      }
+      if (stRes.status === 'fulfilled' && stRes.value.ok) {
+        const d = await stRes.value.json().catch(() => null);
+        if (d) setStats(d);
+      }
+      if (setRes.status === 'fulfilled' && setRes.value.ok) {
+        const d = await setRes.value.json().catch(() => null);
+        if (d) setSettings(d);
+      }
     } catch (e) {
-      console.error('Failed to load admin data:', e);
+      console.warn('Note: using local cached data for admin', e);
     }
   };
 
   useEffect(() => {
     refreshAdminData();
   }, [token]);
+
+  // News Actions
+  const handleOpenAddNews = () => {
+    setEditingNews(null);
+    setIsNewsModalOpen(true);
+  };
+
+  const handleOpenEditNews = (item: NewsItem) => {
+    setEditingNews(item);
+    setIsNewsModalOpen(true);
+  };
+
+  const handleSaveNews = async (itemData: Partial<NewsItem>) => {
+    try {
+      if (editingNews?.id) {
+        // Edit existing
+        const res = await fetch(`/api/news/${editingNews.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(itemData)
+        }).catch(() => null);
+
+        let updatedItem: NewsItem;
+        if (res && res.ok) {
+          updatedItem = await res.json();
+        } else {
+          updatedItem = { ...(editingNews as NewsItem), ...itemData } as NewsItem;
+        }
+
+        const nextList = newsList.map(n => n.id === updatedItem.id ? updatedItem : n);
+        setNewsList(nextList);
+        try { localStorage.setItem('nsk_sport54_news', JSON.stringify(nextList)); } catch {}
+      } else {
+        // Create new
+        const res = await fetch('/api/news', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+          },
+          body: JSON.stringify(itemData)
+        }).catch(() => null);
+
+        let createdItem: NewsItem;
+        if (res && res.ok) {
+          createdItem = await res.json();
+        } else {
+          createdItem = {
+            id: 'news-' + Date.now(),
+            views: 1,
+            isPublished: true,
+            date: new Date().toLocaleDateString('ru-RU'),
+            author: 'Пресс-служба портала Спортивный Город 54',
+            summary: itemData.summary || itemData.content?.slice(0, 120) + '...',
+            preview: itemData.summary || itemData.content?.slice(0, 120) + '...',
+            ...itemData
+          } as NewsItem;
+        }
+
+        const nextList = [createdItem, ...newsList];
+        setNewsList(nextList);
+        try { localStorage.setItem('nsk_sport54_news', JSON.stringify(nextList)); } catch {}
+      }
+      onDataChanged();
+      setEditingNews(null);
+      setIsNewsModalOpen(false);
+    } catch (err) {
+      console.error('Failed to save news:', err);
+    }
+  };
+
+  const handleDeleteNews = async (id: string) => {
+    if (!window.confirm('Вы уверены, что хотите удалить эту новость?')) return;
+    try {
+      await fetch(`/api/news/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` }
+      }).catch(() => null);
+
+      const nextList = newsList.filter(n => n.id !== id);
+      setNewsList(nextList);
+      try { localStorage.setItem('nsk_sport54_news', JSON.stringify(nextList)); } catch {}
+      onDataChanged();
+    } catch (err) {
+      console.error('Failed to delete news:', err);
+    }
+  };
+
+  const handleTogglePublishNews = async (item: NewsItem) => {
+    try {
+      const newStatus = !item.isPublished;
+      await fetch(`/api/news/${item.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ isPublished: newStatus })
+      }).catch(() => null);
+
+      const nextList = newsList.map(n => n.id === item.id ? { ...n, isPublished: newStatus } : n);
+      setNewsList(nextList);
+      try { localStorage.setItem('nsk_sport54_news', JSON.stringify(nextList)); } catch {}
+      onDataChanged();
+    } catch (err) {
+      console.error('Failed to toggle news status:', err);
+    }
+  };
 
   // ==========================================
   // SCHEDULE CRUD ACTIONS
@@ -1615,30 +1772,174 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
           {/* ======================================================== */}
           {activeTab === 'news' && (
             <div className="space-y-6 max-w-5xl mx-auto">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <h2 className="text-2xl font-black text-slate-900 tracking-tight">Новости и события спорта</h2>
-                  <p className="text-xs text-slate-500">Публикация новостей, анонсов соревнований и фестивалей.</p>
+                  <p className="text-xs text-slate-500">Публикация городских новостей, анонсов соревнований, фестивалей и мастер-классов.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenAddNews}
+                  className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/25 cursor-pointer self-start sm:self-auto transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Добавить новость</span>
+                </button>
+              </div>
+
+              {/* Filters & Search */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={newsSearch}
+                    onChange={e => setNewsSearch(e.target.value)}
+                    placeholder="Поиск по заголовку, категории или автору..."
+                    className="w-full pl-9 pr-4 py-2 rounded-xl border border-slate-200 text-xs font-medium focus:border-blue-500 outline-hidden"
+                  />
+                  {newsSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setNewsSearch('')}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <select
+                    value={newsFilterCategory}
+                    onChange={e => setNewsFilterCategory(e.target.value)}
+                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white outline-hidden cursor-pointer"
+                  >
+                    <option value="Все">Все рубрики</option>
+                    <option value="Городской спорт">Городской спорт</option>
+                    <option value="Инфраструктура">Инфраструктура</option>
+                    <option value="Соревнования">Соревнования</option>
+                    <option value="Детский спорт">Детский спорт</option>
+                    <option value="Воркаут & ЗОЖ">Воркаут & ЗОЖ</option>
+                    <option value="Анонсы мероприятий">Анонсы мероприятий</option>
+                  </select>
                 </div>
               </div>
 
-              <div className="space-y-3">
-                {newsList.map(item => (
-                  <div key={item.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-4">
-                      <img src={item.photo} alt={item.title} className="w-20 h-16 rounded-xl object-cover shrink-0" />
-                      <div>
-                        <span className="text-[11px] text-blue-600 font-bold uppercase">{item.category} • {item.date}</span>
-                        <h4 className="font-bold text-slate-900 text-sm">{item.title}</h4>
-                        <p className="text-xs text-slate-500 line-clamp-1">{item.preview}</p>
+              {/* News Items List */}
+              {(() => {
+                const filtered = newsList.filter(item => {
+                  const matchesSearch = !newsSearch || 
+                    item.title.toLowerCase().includes(newsSearch.toLowerCase()) ||
+                    item.summary?.toLowerCase().includes(newsSearch.toLowerCase()) ||
+                    item.author?.toLowerCase().includes(newsSearch.toLowerCase()) ||
+                    item.category?.toLowerCase().includes(newsSearch.toLowerCase());
+                  
+                  const matchesCategory = newsFilterCategory === 'Все' || item.category === newsFilterCategory;
+                  return matchesSearch && matchesCategory;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+                        <Newspaper className="w-6 h-6" />
                       </div>
+                      <h4 className="text-sm font-bold text-slate-800 mb-1">Новости не найдены</h4>
+                      <p className="text-xs text-slate-500 mb-4">Попробуйте изменить параметры поиска или добавьте первую публикацию.</p>
+                      <button
+                        type="button"
+                        onClick={handleOpenAddNews}
+                        className="px-4 py-2 rounded-xl bg-blue-600 text-white font-bold text-xs inline-flex items-center gap-2"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Добавить новость</span>
+                      </button>
                     </div>
-                    <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold shrink-0">
-                      Опубликовано
-                    </span>
+                  );
+                }
+
+                return (
+                  <div className="space-y-3">
+                    {filtered.map(item => (
+                      <div
+                        key={item.id}
+                        className="bg-white rounded-2xl border border-slate-200 p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 hover:border-slate-300 transition-colors shadow-xs"
+                      >
+                        <div className="flex items-start gap-4 flex-1">
+                          <img
+                            src={item.photo}
+                            alt={item.title}
+                            className="w-24 h-20 rounded-xl object-cover shrink-0 bg-slate-100"
+                          />
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                              <span className="font-bold text-blue-600 uppercase tracking-wide">
+                                {item.category || 'Городской спорт'}
+                              </span>
+                              <span className="text-slate-400">•</span>
+                              <span className="text-slate-500 font-medium">{item.date}</span>
+                              {item.district && item.district !== 'Все районы' && (
+                                <>
+                                  <span className="text-slate-400">•</span>
+                                  <span className="text-slate-600 font-medium">{item.district}</span>
+                                </>
+                              )}
+                            </div>
+                            <h4 className="font-bold text-slate-900 text-sm leading-snug">
+                              {item.title}
+                            </h4>
+                            <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed">
+                              {item.summary || item.preview || item.content?.slice(0, 140)}
+                            </p>
+                            {item.author && (
+                              <div className="text-[11px] text-slate-400 pt-0.5">
+                                Автор: {item.author}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                          {/* Publish status toggle */}
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePublishNews(item)}
+                            title="Нажмите, чтобы изменить статус публикации"
+                            className={`px-3 py-1 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                              item.isPublished !== false
+                                ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'
+                                : 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                            }`}
+                          >
+                            {item.isPublished !== false ? 'Опубликовано' : 'Черновик'}
+                          </button>
+
+                          {/* Edit Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditNews(item)}
+                            title="Редактировать новость"
+                            className="p-2 rounded-xl text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+
+                          {/* Delete Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteNews(item.id)}
+                            title="Удалить новость"
+                            className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1766,6 +2067,20 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* ======================================================== */}
+      {/* MODAL: NEWS EDIT / CREATE                                */}
+      {/* ======================================================== */}
+      {isNewsModalOpen && (
+        <NewsEditModal
+          isOpen={isNewsModalOpen}
+          newsItem={editingNews}
+          onClose={() => {
+            setIsNewsModalOpen(false);
+            setEditingNews(null);
+          }}
+          onSave={handleSaveNews}
+        />
       )}
     </div>
   );

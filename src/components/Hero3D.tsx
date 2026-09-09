@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { AthleteScene } from './3d/AthleteScene.tsx';
 import { WorkoutMode } from './3d/AthleteModel.tsx';
+import { ErrorBoundary } from './ErrorBoundary.tsx';
 
 interface Hero3DProps {
   onScrollToSchedule: () => void;
@@ -230,13 +231,27 @@ export const Hero3D: React.FC<Hero3DProps> = ({ onScrollToSchedule, onExploreDis
 
           {/* Interactive React Three Fiber Canvas */}
           <div className="w-full h-full absolute inset-0 z-0">
-            <AthleteScene
-              currentMode={currentMode}
-              speed={speed}
-              isPlaying={isPlaying}
-              onRepUpdate={handleRepUpdate}
-              controlsRef={controlsRef}
-            />
+            <ErrorBoundary
+              fallback={
+                <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-b from-slate-900 via-slate-800 to-slate-950 text-white p-6 text-center">
+                  <div className="w-16 h-16 rounded-3xl bg-lime-500/20 text-lime-400 flex items-center justify-center mb-3">
+                    <Dumbbell className="w-8 h-8" />
+                  </div>
+                  <h3 className="text-lg font-black tracking-tight mb-1">Спортивный Город 54</h3>
+                  <p className="text-xs text-slate-300 max-w-xs">
+                    Интерактивный 3D-тренер (для полного 3D включите аппаратное ускорение в браузере)
+                  </p>
+                </div>
+              }
+            >
+              <AthleteScene
+                currentMode={currentMode}
+                speed={speed}
+                isPlaying={isPlaying}
+                onRepUpdate={handleRepUpdate}
+                controlsRef={controlsRef}
+              />
+            </ErrorBoundary>
           </div>
 
           {/* 3D Rotation Interaction Hint */}
