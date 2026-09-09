@@ -46,7 +46,7 @@ import {
 import { ScheduleEditModal } from './ScheduleEditModal.tsx';
 import { ScheduleChangeModal } from './ScheduleChangeModal.tsx';
 import { NewsEditModal } from './NewsEditModal.tsx';
-import { INITIAL_NEWS } from '../../data/initialData.ts';
+import { INITIAL_NEWS, INITIAL_SCHEDULES, INITIAL_LOCATIONS, INITIAL_DISTRICTS } from '../../data/initialData.ts';
 
 interface AdminPortalProps {
   onClose: () => void;
@@ -134,15 +134,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
 
       if (schRes.status === 'fulfilled' && schRes.value.ok) {
         const d = await schRes.value.json().catch(() => null);
-        if (d) setSchedules(d);
+        if (d && Array.isArray(d) && d.length > 0) setSchedules(d);
+        else {
+          const saved = localStorage.getItem('nsk_sport54_schedules');
+          setSchedules(saved ? JSON.parse(saved) : INITIAL_SCHEDULES);
+        }
+      } else {
+        const saved = localStorage.getItem('nsk_sport54_schedules');
+        setSchedules(saved ? JSON.parse(saved) : INITIAL_SCHEDULES);
       }
+
       if (venRes.status === 'fulfilled' && venRes.value.ok) {
         const d = await venRes.value.json().catch(() => null);
-        if (d) setVenues(d);
+        if (d && Array.isArray(d) && d.length > 0) setVenues(d);
+        else {
+          const saved = localStorage.getItem('nsk_sport54_venues');
+          setVenues(saved ? JSON.parse(saved) : INITIAL_LOCATIONS);
+        }
+      } else {
+        const saved = localStorage.getItem('nsk_sport54_venues');
+        setVenues(saved ? JSON.parse(saved) : INITIAL_LOCATIONS);
       }
+
       if (distRes.status === 'fulfilled' && distRes.value.ok) {
         const d = await distRes.value.json().catch(() => null);
-        if (d) setDistricts(d);
+        if (d && Array.isArray(d) && d.length > 0) setDistricts(d);
+        else {
+          const saved = localStorage.getItem('nsk_sport54_districts');
+          setDistricts(saved ? JSON.parse(saved) : INITIAL_DISTRICTS);
+        }
+      } else {
+        const saved = localStorage.getItem('nsk_sport54_districts');
+        setDistricts(saved ? JSON.parse(saved) : INITIAL_DISTRICTS);
       }
       if (newsRes.status === 'fulfilled' && newsRes.value.ok) {
         const d = await newsRes.value.json().catch(() => null);

@@ -3,6 +3,7 @@ import { AccessibilityBar } from './components/AccessibilityBar.tsx';
 import { Navbar } from './components/Navbar.tsx';
 import { Hero3D } from './components/Hero3D.tsx';
 import { ScheduleSection } from './components/ScheduleSection.tsx';
+import { EventsSection } from './components/EventsSection.tsx';
 import { DistrictsSection } from './components/DistrictsSection.tsx';
 import { InteractiveMap } from './components/InteractiveMap.tsx';
 import { NewsSection } from './components/NewsSection.tsx';
@@ -10,12 +11,13 @@ import { AboutAndContacts } from './components/AboutAndContacts.tsx';
 import { Footer } from './components/Footer.tsx';
 import { AdminLoginModal } from './components/admin/AdminLoginModal.tsx';
 import { AdminPortal } from './components/admin/AdminPortal.tsx';
-import { ScheduleItem, District, SportsVenue, NewsItem } from './types/index.ts';
+import { ScheduleItem, District, SportsVenue, NewsItem, SportEventItem } from './types/index.ts';
 import {
   INITIAL_SCHEDULES,
   INITIAL_DISTRICTS,
   INITIAL_LOCATIONS,
-  INITIAL_NEWS
+  INITIAL_NEWS,
+  INITIAL_EVENTS
 } from './data/initialData.ts';
 import { ErrorBoundary } from './components/ErrorBoundary.tsx';
 
@@ -31,6 +33,19 @@ export default function App() {
       // fallback
     }
     return INITIAL_SCHEDULES;
+  });
+
+  const [events, setEvents] = useState<SportEventItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('nsk_sport54_events');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // fallback
+    }
+    return INITIAL_EVENTS;
   });
 
   const [districts, setDistricts] = useState<District[]>(() => {
@@ -74,21 +89,21 @@ export default function App() {
 
   const [isLoading, setIsLoading] = useState(false);
 
-  // Filter state for schedules
+  // Filter state for schedules & events
   const [selectedDistrict, setSelectedDistrict] = useState<string>('Все районы');
+  const [selectedEventDistrict, setSelectedEventDistrict] = useState<string>('Все районы');
 
-  // Admin state
-  const [adminToken, setAdminToken] = useState<string | null>(() => {
-    return localStorage.getItem('nsk_sport54_admin_token');
-  });
+  // Admin state - requires login each time 'Панель управления' is clicked
+  const [adminToken, setAdminToken] = useState<string | null>(null);
   const [isAdminModalOpen, setIsAdminModalOpen] = useState(false);
   const [isAdminPortalOpen, setIsAdminPortalOpen] = useState(false);
 
   // Load public data with resilient fallback for static hosts (GitHub Pages)
   const fetchData = async () => {
     try {
-      const [schRes, distRes, venRes, newsRes] = await Promise.allSettled([
+      const [schRes, evRes, distRes, venRes, newsRes] = await Promise.allSettled([
         fetch('/api/schedules'),
+        fetch('/api/events'),
         fetch('/api/districts'),
         fetch('/api/locations'),
         fetch('/api/news')
@@ -99,6 +114,14 @@ export default function App() {
         if (Array.isArray(data) && data.length > 0) {
           setSchedules(data);
           try { localStorage.setItem('nsk_sport54_schedules', JSON.stringify(data)); } catch {}
+        }
+      }
+
+      if (evRes.status === 'fulfilled' && evRes.value.ok) {
+        const data = await evRes.value.json().catch(() => null);
+        if (Array.isArray(data) && data.length > 0) {
+          setEvents(data);
+          try { localStorage.setItem('nsk_sport54_events', JSON.stringify(data)); } catch {}
         }
       }
 
@@ -135,26 +158,36 @@ export default function App() {
   useEffect(() => {
     fetchData();
 
-    // Check if URL specifies admin
-    if (window.location.hash === '#admin' || window.location.pathname === '/admin') {
-      if (adminToken) {
-        setIsAdminPortalOpen(true);
-      } else {
+    // Check if URL specifies admin or hash changes to #admin - always require login first
+    const checkAdminRoute = () => {
+      if (window.location.hash === '#admin' || window.location.pathname.endsWith('/admin')) {
         setIsAdminModalOpen(true);
       }
-    }
+    };
+
+    checkAdminRoute();
+    window.addEventListener('hashchange', checkAdminRoute);
+    return () => window.removeEventListener('hashchange', checkAdminRoute);
   }, []);
 
   const handleLoginSuccess = (token: string) => {
     setAdminToken(token);
-    localStorage.setItem('nsk_sport54_admin_token', token);
+    try {
+      localStorage.setItem('nsk_sport54_admin_token', token);
+    } catch {}
+    setIsAdminModalOpen(false);
     setIsAdminPortalOpen(true);
   };
 
   const handleLogout = () => {
     setAdminToken(null);
-    localStorage.removeItem('nsk_sport54_admin_token');
+    try {
+      localStorage.removeItem('nsk_sport54_admin_token');
+    } catch {}
     setIsAdminPortalOpen(false);
+    if (window.location.hash === '#admin') {
+      window.history.replaceState(null, '', window.location.pathname);
+    }
   };
 
   const handleNavigate = (sectionId: string) => {
@@ -166,6 +199,7 @@ export default function App() {
 
   const handleDistrictSelect = (districtName: string) => {
     setSelectedDistrict(districtName);
+    setSelectedEventDistrict(districtName);
     handleNavigate('schedule');
   };
 
@@ -178,8 +212,6 @@ export default function App() {
       <Navbar
         onNavigate={handleNavigate}
         onOpenAdminModal={() => setIsAdminModalOpen(true)}
-        isAdminLoggedIn={!!adminToken}
-        onOpenAdminPortal={() => setIsAdminPortalOpen(true)}
       />
 
       {/* 3. Main Content Container */}
@@ -189,6 +221,7 @@ export default function App() {
           <Hero3D
             onScrollToSchedule={() => handleNavigate('schedule')}
             onExploreDistricts={() => handleNavigate('districts')}
+            onScrollToEvents={() => handleNavigate('events')}
           />
 
           {/* Schedule Section: 3D Cards / Table / Day Timeline / Week View with full filters */}
@@ -197,6 +230,14 @@ export default function App() {
             selectedDistrict={selectedDistrict}
             onDistrictSelect={setSelectedDistrict}
             id="schedule"
+          />
+
+          {/* Events Schedule Section: 3D Cards / Table / Day Timeline / Week View with separate filters */}
+          <EventsSection
+            events={events}
+            selectedDistrict={selectedEventDistrict}
+            onDistrictSelect={setSelectedEventDistrict}
+            id="events"
           />
 
           {/* 10 Districts Section: "Спорт во всех районах" */}
@@ -230,13 +271,7 @@ export default function App() {
       <Footer
         onScrollToTop={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
         onNavigate={handleNavigate}
-        onOpenAdminModal={() => {
-          if (adminToken) {
-            setIsAdminPortalOpen(true);
-          } else {
-            setIsAdminModalOpen(true);
-          }
-        }}
+        onOpenAdminModal={() => setIsAdminModalOpen(true)}
       />
 
       {/* Admin Login Modal */}
@@ -250,7 +285,7 @@ export default function App() {
       {isAdminPortalOpen && adminToken && (
         <AdminPortal
           token={adminToken}
-          onClose={() => setIsAdminPortalOpen(false)}
+          onClose={handleLogout}
           onLogout={handleLogout}
           onDataChanged={fetchData}
         />

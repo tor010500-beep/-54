@@ -12,7 +12,8 @@ import {
   Play,
   Pause,
   Zap,
-  Dumbbell
+  Dumbbell,
+  Trophy
 } from 'lucide-react';
 import { AthleteScene } from './3d/AthleteScene.tsx';
 import { WorkoutMode } from './3d/AthleteModel.tsx';
@@ -21,6 +22,7 @@ import { ErrorBoundary } from './ErrorBoundary.tsx';
 interface Hero3DProps {
   onScrollToSchedule: () => void;
   onExploreDistricts: () => void;
+  onScrollToEvents?: () => void;
 }
 
 const WORKOUT_MODES: {
@@ -60,7 +62,11 @@ const WORKOUT_MODES: {
   }
 ];
 
-export const Hero3D: React.FC<Hero3DProps> = ({ onScrollToSchedule, onExploreDistricts }) => {
+export const Hero3D: React.FC<Hero3DProps> = ({
+  onScrollToSchedule,
+  onExploreDistricts,
+  onScrollToEvents
+}) => {
   const [currentMode, setCurrentMode] = useState<WorkoutMode>('cardio');
   const [isAutoCycle, setIsAutoCycle] = useState(false);
   const [isPlaying, setIsPlaying] = useState(true);
@@ -141,26 +147,38 @@ export const Hero3D: React.FC<Hero3DProps> = ({ onScrollToSchedule, onExploreDis
           </p>
 
           {/* Action Buttons */}
-          <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4 pt-1">
+          <div className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3.5 pt-1">
             <button
               id="btn-hero-schedule"
               type="button"
               onClick={onScrollToSchedule}
-              className="w-full sm:w-auto px-8 py-4 rounded-xl bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 text-white font-bold text-base shadow-lg shadow-sky-500/25 hover:shadow-sky-500/35 transition-all duration-200 flex items-center justify-center gap-2 group cursor-pointer"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 text-white font-bold text-sm sm:text-base shadow-lg shadow-sky-500/25 hover:shadow-sky-500/35 transition-all duration-200 flex items-center justify-center gap-2 group cursor-pointer"
             >
-              <Calendar className="w-5 h-5 group-hover:scale-110 transition-transform" />
-              <span>Смотреть расписание</span>
+              <Calendar className="w-4 h-4 group-hover:scale-110 transition-transform" />
+              <span>Расписание занятий</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
+
+            {onScrollToEvents && (
+              <button
+                id="btn-hero-events"
+                type="button"
+                onClick={onScrollToEvents}
+                className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-sm sm:text-base shadow-md transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>Мероприятия</span>
+              </button>
+            )}
 
             <button
               id="btn-hero-districts"
               type="button"
               onClick={onExploreDistricts}
-              className="w-full sm:w-auto px-7 py-4 rounded-xl bg-white hover:bg-slate-50 text-slate-800 font-semibold text-base border border-slate-200 shadow-sm hover:border-slate-300 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm sm:text-base border border-slate-200 shadow-sm hover:border-slate-300 transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer"
             >
-              <MapPin className="w-5 h-5 text-sky-600" />
-              <span>Районы города</span>
+              <MapPin className="w-4 h-4 text-sky-600" />
+              <span>Районы</span>
             </button>
           </div>
 

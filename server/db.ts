@@ -7,8 +7,10 @@ import {
   NewsItem,
   MediaItem,
   ImportHistoryItem,
-  PortalStats
+  PortalStats,
+  SportEventItem
 } from '../src/types/index.ts';
+import { INITIAL_EVENTS } from '../src/data/initialData.ts';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'database.json');
@@ -16,6 +18,7 @@ const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
 
 export interface DatabaseSchema {
   schedules: ScheduleItem[];
+  events: SportEventItem[];
   districts: District[];
   locations: SportsVenue[];
   news: NewsItem[];
@@ -704,7 +707,12 @@ class Database {
     try {
       if (fs.existsSync(DB_FILE)) {
         const raw = fs.readFileSync(DB_FILE, 'utf-8');
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        if (!parsed.events || !Array.isArray(parsed.events) || parsed.events.length === 0) {
+          parsed.events = INITIAL_EVENTS;
+          this.saveData(parsed);
+        }
+        return parsed;
       }
     } catch (e) {
       console.warn('Error reading db file, re-initializing with seed data:', e);
@@ -712,6 +720,7 @@ class Database {
 
     const defaultData: DatabaseSchema = {
       schedules: INITIAL_SCHEDULES,
+      events: INITIAL_EVENTS,
       districts: INITIAL_DISTRICTS,
       locations: INITIAL_LOCATIONS,
       news: INITIAL_NEWS,
@@ -877,6 +886,149 @@ class Database {
       this.saveData();
     }
     return count;
+  }
+
+  // --- Events ---
+  public getEvents(filters?: {
+    district?: string;
+    eventType?: string;
+    sport?: string;
+    date?: string;
+    dayOfWeek?: string;
+    format?: string;
+    status?: string;
+    search?: string;
+    sortBy?: string;
+  }): SportEventItem[] {
+    let result = [...(this.data.events || [])];
+
+    if (filters) {
+      if (filters.district && filters.district !== 'Все' && filters.district !== 'Все районы') {
+        result = result.filter(e => e.district.toLowerCase() === filters.district!.toLowerCase());
+      }
+      if (filters.eventType && filters.eventType !== 'Все' && filters.eventType !== 'Все типы' && filters.eventType !== 'Все мероприятия') {
+        result = result.filter(e => e.eventType.toLowerCase() === filters.eventType!.toLowerCase());
+      }
+      if (filters.sport && filters.sport !== 'Все' && filters.sport !== 'Все виды спорта') {
+        result = result.filter(e => e.sport.toLowerCase() === filters.sport!.toLowerCase());
+      }
+      if (filters.date) {
+        result = result.filter(e => e.date === filters.date);
+      }
+      if (filters.dayOfWeek && filters.dayOfWeek !== 'Все') {
+        result = result.filter(e => e.dayOfWeek.toUpperCase() === filters.dayOfWeek!.toUpperCase());
+      }
+      if (filters.format && filters.format !== 'all') {
+        result = result.filter(e => e.format === filters.format);
+      }
+      if (filters.status && filters.status !== 'all') {
+        result = result.filter(e => e.status === filters.status);
+      }
+      if (filters.search) {
+        const q = filters.search.toLowerCase().trim();
+        result = result.filter(e =>
+          e.title.toLowerCase().includes(q) ||
+          e.sport.toLowerCase().includes(q) ||
+          e.eventType.toLowerCase().includes(q) ||
+          e.location.toLowerCase().includes(q) ||
+          e.district.toLowerCase().includes(q) ||
+          e.organizer.toLowerCase().includes(q) ||
+          e.description.toLowerCase().includes(q)
+        );
+      }
+      if (filters.sortBy) {
+        if (filters.sortBy === 'date_asc') {
+          result.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
+        } else if (filters.sortBy === 'date_desc') {
+          result.sort((a, b) => b.date.localeCompare(a.date));
+        } else if (filters.sortBy === 'popularity') {
+          result.sort((a, b) => (b.registeredCount || 0) - (a.registeredCount || 0));
+        } else if (filters.sortBy === 'district') {
+          result.sort((a, b) => a.district.localeCompare(b.district));
+        } else if (filters.sortBy === 'title') {
+          result.sort((a, b) => a.title.localeCompare(b.title));
+        }
+      }
+    }
+
+    return result;
+  }
+
+  public getEventById(id: string): SportEventItem | undefined {
+    return (this.data.events || []).find(e => e.id === id);
+  }
+
+  public addEvent(item: Omit<SportEventItem, 'id'>): SportEventItem {
+    const newEvent: SportEventItem = {
+      ...item,
+      id: `ev-${Date.now()}`
+    };
+    if (!this.data.events) this.data.events = [];
+    this.data.events.unshift(newEvent);
+    this.saveData();
+    return newEvent;
+  }
+
+  public updateEvent(id: string, updates: Partial<SportEventItem>): SportEventItem | null {
+    if (!this.data.events) this.data.events = [];
+    const idx = this.data.events.findIndex(e => e.id === id);
+    if (idx === -1) return null;
+    this.data.events[idx] = { ...this.data.events[idx], ...updates };
+    this.saveData();
+    return this.data.events[idx];
+  }
+
+  public deleteEvent(id: string): boolean {
+    if (!this.data.events) return false;
+    const len = this.data.events.length;
+    this.data.events = this.data.events.filter(e => e.id !== id);
+    if (this.data.events.length < len) {
+      this.saveData();
+      return true;
+    }
+    return false;
+  }
+
+  public deleteEventsBatch(ids: string[]): number {
+    if (!this.data.events || !Array.isArray(ids) || ids.length === 0) return 0;
+    const initialLen = this.data.events.length;
+    const idSet = new Set(ids);
+    this.data.events = this.data.events.filter(e => !idSet.has(e.id));
+    const deletedCount = initialLen - this.data.events.length;
+    if (deletedCount > 0) {
+      this.saveData();
+    }
+    return deletedCount;
+  }
+
+  public replaceEvents(newEvents: SportEventItem[], author: string, filename: string): ImportHistoryItem {
+    // 1. Create a rollback snapshot of current events
+    const snapshotId = `snap-ev-${Date.now()}`;
+    const snapshotPath = path.join(SNAPSHOTS_DIR, `${snapshotId}.json`);
+    try {
+      fs.writeFileSync(snapshotPath, JSON.stringify(this.data.events || [], null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Could not write snapshot:', e);
+    }
+
+    // 2. Set new events
+    this.data.events = newEvents;
+    this.data.settings.lastUpdated = new Date().toLocaleDateString('ru-RU');
+
+    // 3. Log history
+    const historyItem: ImportHistoryItem = {
+      id: `imp-ev-${Date.now()}`,
+      fileName: filename,
+      fileType: filename.endsWith('.docx') ? 'docx' : 'xlsx',
+      importedAt: new Date().toLocaleString('ru-RU'),
+      author,
+      rowsCount: newEvents.length,
+      snapshotId,
+      status: 'published'
+    };
+    this.data.importHistory.unshift(historyItem);
+    this.saveData();
+    return historyItem;
   }
 
   public replaceSchedules(newSchedules: ScheduleItem[], author: string, filename: string): ImportHistoryItem {

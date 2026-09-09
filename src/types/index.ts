@@ -132,6 +132,14 @@ export interface ImportRow {
     ageGroup?: string;
     format?: 'indoor' | 'outdoor';
     description?: string;
+    // Fields for sports events import
+    eventType?: string;
+    organizer?: string;
+    organizerPhone?: string;
+    organizerEmail?: string;
+    expectedParticipants?: number;
+    prizes?: string;
+    requirements?: string;
   };
   errors: {
     field: string;
@@ -190,6 +198,52 @@ export interface FilterState {
   ageGroup: AgeGroup;
   format: ActivityFormat;
   sortBy: 'time_asc' | 'time_desc' | 'closest' | 'sport' | 'district' | 'title';
+}
+
+export interface SportEventItem {
+  id: string;
+  title: string;
+  eventType: string; // "Турнир", "Марафон", "Фестиваль", "Кубок", "Семейные старты", "Сдача ГТО", "Первенство", "Велопробег"
+  sport: string;
+  district: string;
+  location: string;
+  address: string;
+  organizer: string;
+  organizerPhone?: string;
+  organizerEmail?: string;
+  date: string; // YYYY-MM-DD
+  endDate?: string;
+  dayOfWeek: string;
+  time: string; // HH:mm
+  durationHours?: number;
+  ageGroup: string; // "Все возраста", "12+", "18+", "Дети"
+  targetCategory?: string;
+  format: 'indoor' | 'outdoor' | 'combined';
+  photo: string;
+  expectedParticipants?: number;
+  registeredCount?: number;
+  description: string;
+  prizes?: string;
+  registrationDeadline?: string;
+  status: 'registration_open' | 'upcoming' | 'ongoing' | 'finished' | 'rescheduled';
+  statusLabel?: string;
+  price?: string;
+  isFeatured?: boolean;
+  requirements?: string;
+}
+
+export interface EventFilterState {
+  search: string;
+  district: string;
+  eventType: string;
+  sport: string;
+  date: string;
+  dayOfWeek: string;
+  timeOfDay: TimeOfDay;
+  ageGroup: AgeGroup;
+  format: 'all' | 'indoor' | 'outdoor';
+  status: 'all' | 'registration_open' | 'upcoming';
+  sortBy: 'date_asc' | 'date_desc' | 'popularity' | 'district' | 'title';
 }
 
 export interface UserSession {

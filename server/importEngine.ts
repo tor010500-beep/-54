@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
-import { ImportRow, ImportPreviewResult, ScheduleItem } from '../src/types/index.ts';
+import { ImportRow, ImportPreviewResult, ScheduleItem, SportEventItem } from '../src/types/index.ts';
 import { db, INITIAL_DISTRICTS } from './db.ts';
 
 // Canonical Novosibirsk districts
@@ -105,9 +105,42 @@ const ALIAS_MAP: Record<string, string> = {
 
   // Format
   'формат': 'format',
-  'тип': 'format',
   'улица/зал': 'format',
   'на улице/в зале': 'format',
+
+  // Event Type
+  'тип': 'eventType',
+  'тип мероприятия': 'eventType',
+  'вид мероприятия': 'eventType',
+  'категория мероприятия': 'eventType',
+  'формат события': 'eventType',
+
+  // Organizer
+  'организатор': 'organizer',
+  'оргкомитет': 'organizer',
+  'проводящая организация': 'organizer',
+  'организаторы': 'organizer',
+  'ответственный организатор': 'organizer',
+
+  // Organizer Phone / Email
+  'телефон организатора': 'organizerPhone',
+  'контактный телефон': 'organizerPhone',
+  'email': 'organizerEmail',
+  'email организатора': 'organizerEmail',
+  'почта': 'organizerEmail',
+
+  // Participants
+  'участники': 'expectedParticipants',
+  'кол-во участников': 'expectedParticipants',
+  'количество участников': 'expectedParticipants',
+  'ожидаемые участники': 'expectedParticipants',
+  'квота': 'expectedParticipants',
+
+  // Prizes
+  'призы': 'prizes',
+  'награды': 'prizes',
+  'награждение': 'prizes',
+  'призовой фонд': 'prizes',
 
   // Description
   'описание': 'description',
@@ -750,5 +783,449 @@ export function exportSchedulesToExcelBuffer(items: any[]): Buffer {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Расписание 54');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+/**
+ * Validate and analyze imported rows for EVENTS (Мероприятия)
+ */
+export function analyzeImportEventsRows(
+  rawRows: Record<string, string>[],
+  userMappingOverride?: Record<string, string>
+): ImportPreviewResult {
+  if (rawRows.length === 0) {
+    return {
+      totalRows: 0,
+      validRows: 0,
+      errorRows: 0,
+      warningRows: 0,
+      columnsFound: [],
+      columnMapping: {},
+      rows: [],
+      diff: { added: 0, updated: 0, deleted: 0 }
+    };
+  }
+
+  const columnsFound = Object.keys(rawRows[0]);
+  const columnMapping: Record<string, string> = {};
+
+  columnsFound.forEach(col => {
+    if (userMappingOverride && userMappingOverride[col]) {
+      columnMapping[col] = userMappingOverride[col];
+    } else {
+      columnMapping[col] = normalizeColumnHeader(col);
+    }
+  });
+
+  const existingEvents = db.getEvents();
+  let validCount = 0;
+  let errorCount = 0;
+  let warningCount = 0;
+
+  const rows: ImportRow[] = rawRows.map((raw, index) => {
+    const normalized: ImportRow['normalized'] = {};
+    const errors: ImportRow['errors'] = [];
+
+    // Map each raw column
+    for (const [col, val] of Object.entries(raw)) {
+      const field = columnMapping[col];
+      const strVal = String(val || '').trim();
+      if (!field || field === 'unmapped') continue;
+
+      if (field === 'date') {
+        const { date, isExact } = normalizeDate(strVal);
+        normalized.date = date;
+        if (!date) {
+          errors.push({ field: 'date', message: `Некорректный формат даты: "${strVal}". Ожидается ГГГГ-ММ-ДД или ДД.ММ.ГГГГ`, severity: 'error' });
+        } else if (!isExact) {
+          errors.push({ field: 'date', message: `Дата скорректирована автоматически: "${strVal}" -> "${date}"`, severity: 'warning' });
+        }
+      } else if (field === 'time') {
+        const { time, isExact } = normalizeTime(strVal);
+        normalized.time = time;
+        if (!time) {
+          errors.push({ field: 'time', message: `Некорректный формат времени: "${strVal}". Ожидается ЧЧ:ММ`, severity: 'error' });
+        } else if (!isExact) {
+          errors.push({ field: 'time', message: `Время приведено к стандарту: "${time}"`, severity: 'warning' });
+        }
+      } else if (field === 'district') {
+        const { name, isExact } = normalizeDistrict(strVal);
+        normalized.district = name || 'Центральный';
+        if (!isExact) {
+          errors.push({ field: 'district', message: `Район сопоставлен приближенно: "${name}"`, severity: 'warning' });
+        }
+      } else if (field === 'sport') {
+        const { name, isExact } = normalizeSport(strVal);
+        normalized.sport = name || 'ОФП';
+        if (!isExact && strVal) {
+          errors.push({ field: 'sport', message: `Вид спорта не из основного списка: "${strVal}"`, severity: 'warning' });
+        }
+      } else if (field === 'eventType') {
+        normalized.eventType = strVal || 'Турнир';
+      } else if (field === 'organizer') {
+        normalized.organizer = strVal;
+      } else if (field === 'organizerPhone') {
+        normalized.organizerPhone = strVal;
+      } else if (field === 'organizerEmail') {
+        normalized.organizerEmail = strVal;
+      } else if (field === 'expectedParticipants') {
+        const num = parseInt(strVal.replace(/[^0-9]/g, ''), 10);
+        normalized.expectedParticipants = isNaN(num) ? 100 : num;
+      } else if (field === 'prizes') {
+        normalized.prizes = strVal;
+      } else if (field === 'format') {
+        const lower = strVal.toLowerCase();
+        if (lower.includes('зал') || lower.includes('помещ') || lower.includes('indoor')) {
+          normalized.format = 'indoor';
+        } else {
+          normalized.format = 'outdoor';
+        }
+      } else if (field === 'ageGroup') {
+        normalized.ageGroup = strVal || 'Все возраста';
+      } else if (field === 'title') {
+        normalized.title = strVal;
+      } else if (field === 'location') {
+        normalized.location = strVal;
+      } else if (field === 'address') {
+        normalized.address = strVal;
+      } else if (field === 'description') {
+        normalized.description = strVal;
+      }
+    }
+
+    if (!normalized.title) {
+      normalized.title = `${normalized.eventType || 'Спортивное событие'}: ${normalized.sport || 'спорт'} (${normalized.district || 'Новосибирск'})`;
+    }
+    if (!normalized.location) {
+      normalized.location = normalized.address || 'Центральная городская площадка';
+    }
+    if (!normalized.address) {
+      normalized.address = normalized.location;
+    }
+    if (!normalized.organizer) {
+      normalized.organizer = 'Управление физической культуры и спорта мэрии Новосибирска';
+    }
+    if (!normalized.eventType) {
+      normalized.eventType = 'Турнир';
+    }
+    if (!normalized.sport) {
+      normalized.sport = 'ОФП';
+    }
+
+    const hasErrors = errors.some(e => e.severity === 'error');
+    const hasWarnings = errors.some(e => e.severity === 'warning');
+
+    if (hasErrors) errorCount++;
+    else if (hasWarnings) warningCount++;
+    else validCount++;
+
+    return {
+      id: `ev-row-${index + 1}`,
+      raw,
+      normalized,
+      errors,
+      isValid: !hasErrors
+    };
+  });
+
+  const totalIncoming = rows.filter(r => r.isValid && !r.isIgnored).length;
+  const existingCount = existingEvents.length;
+
+  return {
+    totalRows: rawRows.length,
+    validRows: validCount,
+    errorRows: errorCount,
+    warningRows: warningCount,
+    columnsFound,
+    columnMapping,
+    rows,
+    diff: {
+      added: totalIncoming,
+      updated: Math.min(Math.floor(totalIncoming * 0.2), existingCount),
+      deleted: Math.max(0, existingCount - totalIncoming)
+    }
+  };
+}
+
+/**
+ * Convert normalized rows to SportEventItem and publish
+ */
+export function publishImportedEvents(
+  rows: ImportRow[],
+  author: string,
+  filename: string
+): { count: number; historyId: string } {
+  const validRows = rows.filter(r => r.isValid && !r.isIgnored);
+
+  const eventPhotos: Record<string, string> = {
+    'Легкая атлетика': 'https://images.unsplash.com/photo-1476480862126-209bfaa8edc8?auto=format&fit=crop&w=1200&q=80',
+    'Баскетбол': 'https://images.unsplash.com/photo-1547919307-1ecb10702e6f?auto=format&fit=crop&w=1200&q=80',
+    'Футбол': 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?auto=format&fit=crop&w=1200&q=80',
+    'Плавание': 'https://images.unsplash.com/photo-1519315901367-f34ff9154487?auto=format&fit=crop&w=1200&q=80',
+    'Волейбол': 'https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?auto=format&fit=crop&w=1200&q=80',
+    'Воркаут': 'https://images.unsplash.com/photo-1517838277536-f5f99be501cd?auto=format&fit=crop&w=1200&q=80',
+    'Шахматы': 'https://images.unsplash.com/photo-1529699211952-734e80c4d42b?auto=format&fit=crop&w=1200&q=80',
+    'Настольный теннис': 'https://images.unsplash.com/photo-1534158914592-062992fbe900?auto=format&fit=crop&w=1200&q=80',
+    'Водный спорт': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1200&q=80',
+    'Единоборства': 'https://images.unsplash.com/photo-1517649763962-0c623266ddc0?auto=format&fit=crop&w=1200&q=80'
+  };
+
+  const newEvents: SportEventItem[] = validRows.map((r, idx) => {
+    const n = r.normalized;
+    const dateStr = n.date || '2026-09-20';
+    const dayOfWeek = getDayOfWeekFromDate(dateStr);
+    const photo = eventPhotos[n.sport || ''] || 'https://images.unsplash.com/photo-1517649763962-0c623266ddc0?auto=format&fit=crop&w=1200&q=80';
+    const expected = n.expectedParticipants || 200;
+    const regCount = Math.floor(expected * 0.45);
+
+    return {
+      id: `ev-imp-${Date.now()}-${idx}`,
+      title: n.title || 'Городское спортивное мероприятие',
+      eventType: n.eventType || 'Турнир',
+      sport: n.sport || 'ОФП',
+      district: n.district || 'Центральный',
+      location: n.location || 'Спортивный комплекс',
+      address: n.address || n.location || 'г. Новосибирск',
+      organizer: n.organizer || 'Управление физической культуры и спорта мэрии Новосибирска',
+      organizerPhone: n.organizerPhone || '+7 (383) 227-40-00',
+      organizerEmail: n.organizerEmail || 'sport@novo-sibirsk.ru',
+      date: dateStr,
+      dayOfWeek,
+      time: n.time || '10:00',
+      durationHours: 4,
+      ageGroup: n.ageGroup || 'Все возраста',
+      targetCategory: 'Все',
+      format: (n.format as any) || 'outdoor',
+      photo,
+      expectedParticipants: expected,
+      registeredCount: regCount,
+      description: n.description || 'Общегородское спортивное состязание для жителей и гостей города Новосибирска.',
+      prizes: n.prizes || 'Кубки, памятные медали и дипломы победителям',
+      status: 'registration_open',
+      statusLabel: 'Регистрация открыта',
+      price: 'Бесплатно',
+      isFeatured: idx < 2
+    };
+  });
+
+  const history = db.replaceEvents(newEvents, author, filename);
+  return { count: newEvents.length, historyId: history.id };
+}
+
+/**
+ * Generate sample Excel file with realistic sports events for Novosibirsk
+ */
+export function generateSampleEventsExcelBuffer(): Buffer {
+  const sampleEventsData = [
+    {
+      'Дата': '20.09.2026',
+      'Время': '09:00',
+      'Название мероприятия': 'Городской осенний полумарафон «Рассвет на Оби 2026»',
+      'Тип мероприятия': 'Марафон',
+      'Вид спорта': 'Легкая атлетика',
+      'Район': 'Октябрьский',
+      'Место проведения': 'Михайловская набережная',
+      'Адрес': 'ул. Большевистская, 12б',
+      'Организатор': 'Федерация легкой атлетики Новосибирской области',
+      'Телефон': '+7 (383) 222-10-85',
+      'Участники': 1200,
+      'Призы': 'Кубки мэра Новосибирска, памятные медали всем финишерам',
+      'Возраст': 'Все возраста',
+      'Формат': 'На улице',
+      'Описание': 'Главный осенний забег Сибири вдоль реки Обь на дистанции 5, 10 и 21.1 км.'
+    },
+    {
+      'Дата': '26.09.2026',
+      'Время': '11:00',
+      'Название мероприятия': 'Открытый кубок мэрии по уличному баскетболу 3х3 «Сибирь Баскет»',
+      'Тип мероприятия': 'Турнир',
+      'Вид спорта': 'Баскетбол',
+      'Район': 'Центральный',
+      'Место проведения': 'Стадион «Спартак» (баскетбольная арена)',
+      'Адрес': 'ул. Мичурина, 10',
+      'Организатор': 'Баскетбольный клуб «Новосибирск»',
+      'Телефон': '+7 (383) 217-10-85',
+      'Участники': 350,
+      'Призы': 'Профессиональные мячи Wilson, кубки чемпионов и форма',
+      'Возраст': '14+',
+      'Формат': 'На улице',
+      'Описание': 'Масштабный стритбол-турнир на 8 кортах одновременно.'
+    },
+    {
+      'Дата': '27.09.2026',
+      'Время': '10:00',
+      'Название мероприятия': 'Городской открытый турнир по настольному теннису «Золотая ракетка Сибири»',
+      'Тип мероприятия': 'Турнир',
+      'Вид спорта': 'Настольный теннис',
+      'Район': 'Дзержинский',
+      'Место проведения': 'Парк «Березовая роща» (теннисный павильон)',
+      'Адрес': 'ул. Планетная, 53',
+      'Организатор': 'Клуб настольного тенниса Дзержинского района',
+      'Телефон': '+7 (383) 279-44-33',
+      'Участники': 120,
+      'Призы': 'Наборы профессиональных мячей, наградные кубки и грамоты',
+      'Возраст': 'Все возраста',
+      'Формат': 'В помещении',
+      'Описание': 'Личные и парные состязания по олимпийской системе с розыгрышем всех мест.'
+    },
+    {
+      'Дата': '03.10.2026',
+      'Время': '12:00',
+      'Название мероприятия': 'Шахматный фестиваль под открытым небом «Сибирский гамбит»',
+      'Тип мероприятия': 'Фестиваль',
+      'Вид спорта': 'Шахматы',
+      'Район': 'Центральный',
+      'Место проведения': 'Театральный сквер (у НОВАТа)',
+      'Адрес': 'Красный проспект, 36',
+      'Организатор': 'Шахматная федерация Новосибирской области',
+      'Телефон': '+7 (383) 223-14-55',
+      'Участники': 200,
+      'Призы': 'Электронные шахматные часы DGT, памятные кубки',
+      'Возраст': 'Все возраста',
+      'Формат': 'На улице',
+      'Описание': 'Сеанс одновременной игры на 50 досках и блиц-турнир.'
+    },
+    {
+      'Дата': '04.10.2026',
+      'Время': '10:00',
+      'Название мероприятия': 'Традиционный легкоатлетический кросс «Золотая осень Первомайки»',
+      'Тип мероприятия': 'Марафон',
+      'Вид спорта': 'Легкая атлетика',
+      'Район': 'Первомайский',
+      'Место проведения': 'Стадион «Локомотив»',
+      'Адрес': 'ул. Первомайская, 154',
+      'Организатор': 'Отдел молодежи и спорта Первомайского района',
+      'Телефон': '+7 (383) 337-22-11',
+      'Участники': 800,
+      'Призы': 'Памятные медали, дипломы и призы от партнеров',
+      'Возраст': 'Все возраста',
+      'Формат': 'На улице',
+      'Описание': 'Осенний пробег по живописным аллеям парка на 1, 3 и 5 км.'
+    }
+  ];
+
+  const ws = XLSX.utils.json_to_sheet(sampleEventsData);
+  ws['!cols'] = [
+    { wch: 14 }, // Дата
+    { wch: 10 }, // Время
+    { wch: 38 }, // Название мероприятия
+    { wch: 18 }, // Тип мероприятия
+    { wch: 22 }, // Вид спорта
+    { wch: 18 }, // Район
+    { wch: 30 }, // Место проведения
+    { wch: 28 }, // Адрес
+    { wch: 32 }, // Организатор
+    { wch: 20 }, // Телефон
+    { wch: 14 }, // Участники
+    { wch: 32 }, // Призы
+    { wch: 16 }, // Возраст
+    { wch: 14 }, // Формат
+    { wch: 45 }  // Описание
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Мероприятия 54');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+/**
+ * Generate empty Excel template for sports events
+ */
+export function generateEmptyEventsTemplateExcelBuffer(): Buffer {
+  const headers = [
+    {
+      'Дата': '',
+      'Время': '',
+      'Название мероприятия': '',
+      'Тип мероприятия': '',
+      'Вид спорта': '',
+      'Район': '',
+      'Место проведения': '',
+      'Адрес': '',
+      'Организатор': '',
+      'Телефон': '',
+      'Участники': '',
+      'Призы': '',
+      'Возраст': '',
+      'Формат': '',
+      'Описание': ''
+    }
+  ];
+
+  const ws = XLSX.utils.json_to_sheet(headers);
+  ws['!cols'] = [
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 38 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 30 },
+    { wch: 28 },
+    { wch: 32 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 32 },
+    { wch: 16 },
+    { wch: 14 },
+    { wch: 45 }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Шаблон мероприятий');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+/**
+ * Export live events list to Excel (.xlsx)
+ */
+export function exportEventsToExcelBuffer(items: SportEventItem[]): Buffer {
+  const rows = items.map(ev => ({
+    'Дата': ev.date || '',
+    'Время': ev.time || '',
+    'День недели': ev.dayOfWeek || '',
+    'Название': ev.title || '',
+    'Тип мероприятия': ev.eventType || '',
+    'Вид спорта': ev.sport || '',
+    'Район': ev.district || '',
+    'Место проведения': ev.location || '',
+    'Адрес': ev.address || '',
+    'Организатор': ev.organizer || '',
+    'Телефон организатора': ev.organizerPhone || '',
+    'Email организатора': ev.organizerEmail || '',
+    'Ожидаемо участников': ev.expectedParticipants || 0,
+    'Зарегистрировано': ev.registeredCount || 0,
+    'Формат': ev.format === 'indoor' ? 'В помещении' : ev.format === 'combined' ? 'Смешанный' : 'На улице',
+    'Возрастная группа': ev.ageGroup || 'Все возраста',
+    'Статус': ev.status === 'registration_open' ? 'Регистрация открыта' : ev.status === 'upcoming' ? 'Скоро' : 'Завершено',
+    'Призы и награды': ev.prizes || '',
+    'Описание': ev.description || ''
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 12 },
+    { wch: 36 },
+    { wch: 18 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 28 },
+    { wch: 30 },
+    { wch: 28 },
+    { wch: 20 },
+    { wch: 24 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 22 },
+    { wch: 30 },
+    { wch: 45 }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Мероприятия Новосибирск');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }

@@ -11,7 +11,12 @@ import {
   publishImportedRows,
   generateSampleExcelBuffer,
   generateEmptyTemplateExcelBuffer,
-  exportSchedulesToExcelBuffer
+  exportSchedulesToExcelBuffer,
+  analyzeImportEventsRows,
+  publishImportedEvents,
+  generateSampleEventsExcelBuffer,
+  generateEmptyEventsTemplateExcelBuffer,
+  exportEventsToExcelBuffer
 } from './server/importEngine.ts';
 import { initMediaFolders, analyzeFileName, processZipArchive } from './server/mediaEngine.ts';
 
@@ -173,6 +178,93 @@ app.post('/api/schedules/batch-delete', requireAdmin, (req, res) => {
   }
   const deletedCount = db.deleteSchedulesBatch(ids);
   res.json({ success: true, count: deletedCount });
+});
+
+// --- Events (Мероприятия) ---
+app.get('/api/events', (req, res) => {
+  const {
+    district,
+    eventType,
+    sport,
+    date,
+    dayOfWeek,
+    format,
+    status,
+    search,
+    sortBy
+  } = req.query;
+
+  const events = db.getEvents({
+    district: district as string,
+    eventType: eventType as string,
+    sport: sport as string,
+    date: date as string,
+    dayOfWeek: dayOfWeek as string,
+    format: format as string,
+    status: status as string,
+    search: search as string,
+    sortBy: sortBy as string
+  });
+
+  res.json(events);
+});
+
+app.get('/api/events/:id', (req, res) => {
+  const item = db.getEventById(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  res.json(item);
+});
+
+app.post('/api/events/:id/register', (req, res) => {
+  const item = db.getEventById(req.params.id);
+  if (!item) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  const updatedCount = (item.registeredCount || 0) + 1;
+  const updated = db.updateEvent(req.params.id, { registeredCount: updatedCount });
+  res.json({ success: true, registeredCount: updatedCount, event: updated });
+});
+
+app.post('/api/events', requireAdmin, (req, res) => {
+  try {
+    const created = db.addEvent(req.body);
+    res.status(201).json(created);
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || 'Ошибка создания мероприятия' });
+  }
+});
+
+app.put('/api/events/:id', requireAdmin, (req, res) => {
+  const updated = db.updateEvent(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  res.json(updated);
+});
+
+app.delete('/api/events/:id', requireAdmin, (req, res) => {
+  const success = db.deleteEvent(req.params.id);
+  if (!success) return res.status(404).json({ error: 'Мероприятие не найдено' });
+  res.json({ success: true, id: req.params.id });
+});
+
+app.post('/api/events/batch-delete', requireAdmin, (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Не указаны ID мероприятий для удаления' });
+  }
+  const deletedCount = db.deleteEventsBatch(ids);
+  res.json({ success: true, deletedCount });
+});
+
+app.get('/api/events/export.xlsx', (req, res) => {
+  try {
+    const events = db.getEvents();
+    const buffer = exportEventsToExcelBuffer(events);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Meropriyatiya_Novosibirsk.xlsx"; filename*=UTF-8\'\'Meropriyatiya_Novosibirsk.xlsx');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // --- Districts ---
@@ -342,17 +434,20 @@ app.post('/api/import/excel', requireAdmin, upload.single('file'), (req, res) =>
     return res.status(400).json({ error: 'Файл Excel не выбран' });
   }
 
+  const isEvents = req.query.target === 'events' || req.body.target === 'events';
+
   try {
     const { rows, headers } = parseExcelBuffer(req.file.buffer);
     if (rows.length === 0) {
       return res.status(400).json({ error: 'Файл пуст или не содержит строк с данными' });
     }
 
-    const preview = analyzeImportRows(rows);
+    const preview = isEvents ? analyzeImportEventsRows(rows) : analyzeImportRows(rows);
     res.json({
       fileName: req.file.originalname,
       headers,
-      preview
+      preview,
+      target: isEvents ? 'events' : 'schedules'
     });
   } catch (e: any) {
     console.error('Excel parse error:', e);
@@ -365,17 +460,20 @@ app.post('/api/import/word', requireAdmin, upload.single('file'), async (req, re
     return res.status(400).json({ error: 'Файл Word не выбран' });
   }
 
+  const isEvents = req.query.target === 'events' || req.body.target === 'events';
+
   try {
     const { rows, headers } = await parseWordBuffer(req.file.buffer);
     if (rows.length === 0) {
-      return res.status(400).json({ error: 'В документе Word не обнаружены таблицы с расписанием' });
+      return res.status(400).json({ error: 'В документе Word не обнаружены таблицы с данными' });
     }
 
-    const preview = analyzeImportRows(rows);
+    const preview = isEvents ? analyzeImportEventsRows(rows) : analyzeImportRows(rows);
     res.json({
       fileName: req.file.originalname,
       headers,
-      preview
+      preview,
+      target: isEvents ? 'events' : 'schedules'
     });
   } catch (e: any) {
     console.error('Word parse error:', e);
@@ -384,27 +482,44 @@ app.post('/api/import/word', requireAdmin, upload.single('file'), async (req, re
 });
 
 app.post('/api/import/preview', requireAdmin, (req, res) => {
-  const { rawRows, columnMapping } = req.body;
+  const { rawRows, columnMapping, target } = req.body;
   if (!Array.isArray(rawRows)) {
     return res.status(400).json({ error: 'Требуется массив rawRows' });
   }
 
-  const preview = analyzeImportRows(rawRows, columnMapping);
+  const isEvents = target === 'events';
+  const preview = isEvents
+    ? analyzeImportEventsRows(rawRows, columnMapping)
+    : analyzeImportRows(rawRows, columnMapping);
   res.json(preview);
 });
 
 app.post('/api/import/publish', requireAdmin, (req: AuthenticatedRequest, res) => {
-  const { rows, filename } = req.body;
+  const { rows, filename, target } = req.body;
   if (!Array.isArray(rows) || rows.length === 0) {
     return res.status(400).json({ error: 'Нет строк для публикации' });
   }
 
   const author = req.user?.username || 'Администратор';
+  const isEvents = target === 'events';
+
+  if (isEvents) {
+    const result = publishImportedEvents(rows, author, filename || 'Импорт_мероприятий.xlsx');
+    return res.json({
+      success: true,
+      publishedCount: result.count,
+      historyId: result.historyId,
+      target: 'events',
+      timestamp: new Date().toISOString()
+    });
+  }
+
   const result = publishImportedRows(rows, author, filename || 'Импорт_расписания.xlsx');
   res.json({
     success: true,
     publishedCount: result.count,
     historyId: result.historyId,
+    target: 'schedules',
     timestamp: new Date().toISOString()
   });
 });
@@ -441,6 +556,34 @@ app.get(['/api/import/template-empty.xlsx', '/api/import/sample-empty.xlsx'], (r
     const buffer = generateEmptyTemplateExcelBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', 'attachment; filename="Shablon_raspisaniya_Novosibirsk.xlsx"; filename*=UTF-8\'\'Shablon_raspisaniya_Novosibirsk.xlsx');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Download sample Excel with realistic Novosibirsk sports events data
+app.get(['/api/import/events-sample.xlsx', '/api/import/events-sample'], (req, res) => {
+  try {
+    const buffer = generateSampleEventsExcelBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Obrazets_meropriyatiy_Novosibirsk.xlsx"; filename*=UTF-8\'\'Obrazets_meropriyatiy_Novosibirsk.xlsx');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Download empty blank template Excel file for sports events
+app.get(['/api/import/events-template.xlsx', '/api/import/events-template'], (req, res) => {
+  try {
+    const buffer = generateEmptyEventsTemplateExcelBuffer();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Shablon_meropriyatiy_Novosibirsk.xlsx"; filename*=UTF-8\'\'Shablon_meropriyatiy_Novosibirsk.xlsx');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.setHeader('Content-Length', buffer.length);
     res.end(buffer);

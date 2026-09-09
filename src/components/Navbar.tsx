@@ -17,8 +17,8 @@ import {
 interface NavbarProps {
   onNavigate: (sectionId: string) => void;
   onOpenAdminModal: () => void;
-  isAdminLoggedIn: boolean;
-  onOpenAdminPortal: () => void;
+  isAdminLoggedIn?: boolean;
+  onOpenAdminPortal?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -75,7 +75,15 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => handleNavClick('schedule')}
               className="text-sm font-semibold text-slate-700 hover:text-blue-600 transition-colors cursor-pointer"
             >
-              Расписание
+              Расписание занятий
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavClick('events')}
+              className="text-sm font-semibold text-slate-700 hover:text-blue-600 transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <span>Мероприятия</span>
+              <span className="w-2 h-2 rounded-full bg-lime-500 animate-pulse" />
             </button>
             <button
               type="button"
@@ -109,27 +117,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right Action: Admin Entry Button */}
           <div className="hidden sm:flex items-center gap-3">
-            {isAdminLoggedIn ? (
-              <button
-                id="btn-nav-admin-portal"
-                type="button"
-                onClick={onOpenAdminPortal}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Панель управления</span>
-              </button>
-            ) : (
-              <button
-                id="btn-nav-admin-login"
-                type="button"
-                onClick={onOpenAdminModal}
-                className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all cursor-pointer"
-              >
-                <Lock className="w-3.5 h-3.5 text-sky-400" />
-                <span>Вход для администратора</span>
-              </button>
-            )}
+            <button
+              id="btn-nav-admin-portal"
+              type="button"
+              onClick={onOpenAdminModal}
+              className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold text-xs shadow-sm hover:shadow-md flex items-center gap-2 transition-all cursor-pointer"
+            >
+              <Lock className="w-3.5 h-3.5 text-sky-400" />
+              <span>Панель управления</span>
+            </button>
           </div>
 
           {/* Mobile hamburger button */}
@@ -163,6 +159,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => handleNavClick('events')}
+            className="w-full text-left py-2 px-3 rounded-lg text-sm font-semibold text-slate-800 hover:bg-slate-50 flex items-center justify-between"
+          >
+            <span>Расписание мероприятий</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold">События</span>
+          </button>
+          <button
+            type="button"
             onClick={() => handleNavClick('districts')}
             className="w-full text-left py-2 px-3 rounded-lg text-sm font-semibold text-slate-800 hover:bg-slate-50"
           >
@@ -191,31 +195,18 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
 
           <div className="pt-3 border-t border-slate-100">
-            {isAdminLoggedIn ? (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenAdminPortal();
-                  setIsMobileMenuOpen(false);
-                }}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Панель управления</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenAdminModal();
-                  setIsMobileMenuOpen(false);
-                }}
-                className="w-full py-2.5 rounded-xl bg-slate-900 text-white font-bold text-xs flex items-center justify-center gap-2"
-              >
-                <Lock className="w-4 h-4 text-sky-400" />
-                <span>Вход для администратора</span>
-              </button>
-            )}
+            <button
+              id="btn-mobile-admin-portal"
+              type="button"
+              onClick={() => {
+                onOpenAdminModal();
+                setIsMobileMenuOpen(false);
+              }}
+              className="w-full py-3 rounded-xl bg-slate-900 active:scale-98 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+            >
+              <Lock className="w-4 h-4 text-sky-400" />
+              <span>Панель управления</span>
+            </button>
           </div>
         </div>
       )}
