@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { ScheduleItem, ViewMode, FilterState, TimeOfDay, AgeGroup, ActivityFormat } from '../types/index.ts';
 import { CardTilt } from './CardTilt.tsx';
+import { ScheduleRegistrationModal } from './ScheduleRegistrationModal.tsx';
+import { ViewAttendeesModal } from './ViewAttendeesModal.tsx';
 
 interface ScheduleSectionProps {
   schedules: ScheduleItem[];
@@ -92,6 +94,10 @@ export const ScheduleSection: React.FC<ScheduleSectionProps> = ({
   // Active detail modal
   const [activeItem, setActiveItem] = useState<ScheduleItem | null>(null);
   const [enrolledSuccess, setEnrolledSuccess] = useState<string | null>(null);
+
+  // Registration & Attendees modals
+  const [registeringItem, setRegisteringItem] = useState<ScheduleItem | null>(null);
+  const [viewingAttendeesItem, setViewingAttendeesItem] = useState<ScheduleItem | null>(null);
 
   // Sync selectedDistrict prop if changed
   React.useEffect(() => {
@@ -625,23 +631,63 @@ export const ScheduleSection: React.FC<ScheduleSectionProps> = ({
                       </div>
                     </div>
 
-                    {/* Footer with Price & Button */}
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <div className="text-xs">
-                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Стоимость</span>
-                        <span className="font-extrabold text-emerald-600 text-sm">Бесплатно</span>
+                    {/* Enrolled Participants tracker */}
+                    <div className="pt-2 pb-1">
+                      <div className="flex items-center justify-between text-[11px] mb-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingAttendeesItem(item);
+                          }}
+                          className="flex items-center gap-1 font-bold text-purple-700 hover:text-purple-900 cursor-pointer"
+                          title="Посмотреть список записавшихся участников"
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Записались: {item.enrolled || 0} / {item.capacity || 20}</span>
+                        </button>
+                        <span className="font-extrabold text-emerald-600 text-xs">Бесплатно</span>
                       </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all ${
+                            ((item.enrolled || 0) / (item.capacity || 20)) >= 1
+                              ? 'bg-rose-500'
+                              : ((item.enrolled || 0) / (item.capacity || 20)) >= 0.7
+                              ? 'bg-amber-500'
+                              : 'bg-blue-600'
+                          }`}
+                          style={{
+                            width: `${Math.min(100, Math.round(((item.enrolled || 0) / (item.capacity || 20)) * 100))}%`
+                          }}
+                        />
+                      </div>
+                    </div>
 
+                    {/* Footer with Actions */}
+                    <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between gap-2">
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveItem(item);
                         }}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-600 text-slate-700 hover:text-white font-bold text-xs transition-all cursor-pointer group"
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer"
                       >
-                        <span>Подробнее</span>
-                        <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                        <span>Инфо</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setRegisteringItem(item);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm shadow-blue-600/20 transition-all cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Записаться</span>
                       </button>
                     </div>
                   </div>
@@ -667,6 +713,7 @@ export const ScheduleSection: React.FC<ScheduleSectionProps> = ({
                     <th className="py-3.5 px-4">Место проведения</th>
                     <th className="py-3.5 px-4">Инструктор</th>
                     <th className="py-3.5 px-4">Группа</th>
+                    <th className="py-3.5 px-4 text-center">Записались</th>
                     <th className="py-3.5 px-4 text-right">Действие</th>
                   </tr>
                 </thead>
@@ -694,13 +741,31 @@ export const ScheduleSection: React.FC<ScheduleSectionProps> = ({
                           {item.ageGroup}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right whitespace-nowrap">
+                      <td className="py-3 px-4 whitespace-nowrap text-center">
+                        <button
+                          type="button"
+                          onClick={() => setViewingAttendeesItem(item)}
+                          className="inline-flex items-center gap-1 font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-xl text-xs transition-colors cursor-pointer border border-purple-200"
+                          title="Посмотреть список записавшихся участников"
+                        >
+                          <Users className="w-3.5 h-3.5 text-purple-600" />
+                          <span>{item.enrolled || 0} / {item.capacity || 20}</span>
+                        </button>
+                      </td>
+                      <td className="py-3 px-4 text-right whitespace-nowrap space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setRegisteringItem(item)}
+                          className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm shadow-blue-600/20 transition-all cursor-pointer"
+                        >
+                          Записаться
+                        </button>
                         <button
                           type="button"
                           onClick={() => setActiveItem(item)}
-                          className="px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white font-bold text-xs transition-colors cursor-pointer"
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition-colors cursor-pointer"
                         >
-                          Подробнее →
+                          Инфо
                         </button>
                       </td>
                     </tr>
@@ -977,21 +1042,68 @@ export const ScheduleSection: React.FC<ScheduleSectionProps> = ({
                 >
                   Закрыть
                 </button>
-                <button
-                  id="btn-enroll-activity"
-                  type="button"
-                  onClick={() => {
-                    handleEnroll(activeItem);
-                    setActiveItem(null);
-                  }}
-                  className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Записаться бесплатно</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const it = activeItem;
+                      setActiveItem(null);
+                      setViewingAttendeesItem(it);
+                    }}
+                    className="px-4 py-2.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer border border-purple-200 transition-colors"
+                  >
+                    <Users className="w-4 h-4 text-purple-600" />
+                    <span>Записались ({activeItem.enrolled || 0})</span>
+                  </button>
+
+                  <button
+                    id="btn-enroll-activity"
+                    type="button"
+                    onClick={() => {
+                      const it = activeItem;
+                      setActiveItem(null);
+                      setRegisteringItem(it);
+                    }}
+                    className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm shadow-md shadow-blue-600/20 flex items-center gap-2 cursor-pointer transition-all"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Записаться онлайн</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
+        )}
+
+        {/* Registration Modal */}
+        {registeringItem && (
+          <ScheduleRegistrationModal
+            isOpen={Boolean(registeringItem)}
+            schedule={registeringItem}
+            onClose={() => setRegisteringItem(null)}
+            onSuccess={(reg) => {
+              setEnrolledSuccess(`Вы успешно записаны на «${reg.targetTitle}»! Номер вашей брони: #${reg.id.slice(-6)}`);
+              registeringItem.enrolled = (registeringItem.enrolled || 0) + (reg.participantsCount || 1);
+              setTimeout(() => setEnrolledSuccess(null), 6000);
+            }}
+          />
+        )}
+
+        {/* Attendees list modal */}
+        {viewingAttendeesItem && (
+          <ViewAttendeesModal
+            isOpen={Boolean(viewingAttendeesItem)}
+            targetType="schedule"
+            targetId={viewingAttendeesItem.id}
+            targetTitle={viewingAttendeesItem.title}
+            targetDate={viewingAttendeesItem.date || viewingAttendeesItem.dayOfWeek}
+            targetTime={viewingAttendeesItem.time}
+            targetLocation={viewingAttendeesItem.location}
+            targetDistrict={viewingAttendeesItem.district}
+            targetSport={viewingAttendeesItem.sport}
+            capacity={viewingAttendeesItem.capacity || 20}
+            onClose={() => setViewingAttendeesItem(null)}
+          />
         )}
       </div>
     </section>

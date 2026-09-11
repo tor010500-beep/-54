@@ -185,6 +185,7 @@ export interface PortalStats {
   locationsCount: number;
   mediaCount: number;
   newsCount: number;
+  registrationsCount?: number;
   lastUpdated: string;
 }
 
@@ -250,4 +251,29 @@ export interface UserSession {
   username: string;
   role: 'admin' | 'moderator';
   token: string;
+}
+
+export type RegistrationStatus = 'confirmed' | 'pending' | 'attended' | 'cancelled';
+
+export interface ParticipantRegistration {
+  id: string;
+  targetType: 'schedule' | 'event';
+  targetId: string;
+  targetTitle: string;
+  targetDate: string;
+  targetTime: string;
+  targetLocation: string;
+  targetDistrict: string;
+  targetSport?: string;
+  fullName: string;
+  phone: string;
+  email?: string;
+  participantsCount: number;
+  comment?: string;
+  status: RegistrationStatus;
+  registeredAt: string;
+  createdAt?: string;
+  bookingCode?: string;
+  contactNotes?: string;
+  lastContactedAt?: string;
 }

@@ -26,6 +26,7 @@ import {
   Download
 } from 'lucide-react';
 import { SportEventItem, EventFilterState, AgeGroup, TimeOfDay } from '../types/index.ts';
+import { ViewAttendeesModal } from './ViewAttendeesModal.tsx';
 
 interface EventsSectionProps {
   events: SportEventItem[];
@@ -130,6 +131,7 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
   const [selectedEvent, setSelectedEvent] = useState<SportEventItem | null>(null);
   const [registrationModalOpen, setRegistrationModalOpen] = useState(false);
   const [eventForRegistration, setEventForRegistration] = useState<SportEventItem | null>(null);
+  const [viewingAttendeesEvent, setViewingAttendeesEvent] = useState<SportEventItem | null>(null);
 
   // Form state
   const [regName, setRegName] = useState('');
@@ -794,15 +796,20 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
 
                         {/* Progress of registration */}
                         <div className="mb-4 bg-slate-900/70 p-3 rounded-2xl border border-slate-700/50">
-                          <div className="flex justify-between items-center text-[11px] font-bold text-slate-400 mb-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingAttendeesEvent(ev)}
+                            className="w-full flex justify-between items-center text-[11px] font-bold text-slate-400 mb-1.5 hover:text-blue-300 transition-colors cursor-pointer text-left"
+                            title="Посмотреть список записавшихся участников"
+                          >
                             <span className="flex items-center gap-1">
                               <Users className="w-3.5 h-3.5 text-blue-400" />
-                              <span>Участники</span>
+                              <span>Участники (список)</span>
                             </span>
-                            <span className="text-white font-mono">
+                            <span className="text-white font-mono hover:underline">
                               {ev.registeredCount || 0} / {ev.expectedParticipants} чел.
                             </span>
-                          </div>
+                          </button>
                           <div className="w-full h-2 rounded-full bg-slate-700 overflow-hidden">
                             <div
                               className="h-full bg-gradient-to-r from-blue-500 to-lime-400 rounded-full transition-all duration-500"
@@ -837,6 +844,15 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
                               <span>Принять участие</span>
                             </>
                           )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setViewingAttendeesEvent(ev)}
+                          title={`Список записавшихся участников (${ev.registeredCount || 0})`}
+                          className="p-2.5 rounded-xl bg-purple-900/50 hover:bg-purple-800 text-purple-200 hover:text-white transition-all cursor-pointer border border-purple-500/30"
+                        >
+                          <Users className="w-4 h-4" />
                         </button>
 
                         <button
@@ -916,8 +932,16 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
                           </span>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap text-xs font-mono">
-                          <span className="text-white font-bold">{ev.registeredCount || 0}</span>
-                          <span className="text-slate-400"> / {ev.expectedParticipants}</span>
+                          <button
+                            type="button"
+                            onClick={() => setViewingAttendeesEvent(ev)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-purple-900/40 hover:bg-purple-900/80 border border-purple-500/30 text-purple-200 transition-colors cursor-pointer"
+                            title="Посмотреть список записавшихся участников"
+                          >
+                            <Users className="w-3.5 h-3.5 text-purple-400" />
+                            <span className="text-white font-bold">{ev.registeredCount || 0}</span>
+                            <span className="text-slate-400">/ {ev.expectedParticipants}</span>
+                          </button>
                         </td>
                         <td className="py-4 px-4 whitespace-nowrap">
                           <span
@@ -1231,7 +1255,7 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
               </div>
 
               {/* Modal footer buttons */}
-              <div className="flex items-center gap-3 pt-2">
+              <div className="flex flex-wrap items-center gap-3 pt-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -1239,10 +1263,24 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
                     setSelectedEvent(null);
                     setRegistrationModalOpen(true);
                   }}
-                  className="flex-1 py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all"
+                  className="flex-1 min-w-[200px] py-3 px-6 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-xl flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   <Flame className="w-4 h-4 text-amber-300" />
                   <span>Подать заявку на участие</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const ev = selectedEvent;
+                    setSelectedEvent(null);
+                    setViewingAttendeesEvent(ev);
+                  }}
+                  className="py-3 px-4 rounded-2xl bg-purple-900/60 hover:bg-purple-800 border border-purple-500/30 text-purple-200 hover:text-white font-bold text-sm transition-all flex items-center gap-2 cursor-pointer"
+                  title="Посмотреть список записавшихся участников"
+                >
+                  <Users className="w-4 h-4 text-purple-400" />
+                  <span>Участники ({selectedEvent.registeredCount || 0})</span>
                 </button>
 
                 <button
@@ -1358,6 +1396,23 @@ export const EventsSection: React.FC<EventsSectionProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* Attendees list modal for events */}
+      {viewingAttendeesEvent && (
+        <ViewAttendeesModal
+          isOpen={Boolean(viewingAttendeesEvent)}
+          targetType="event"
+          targetId={viewingAttendeesEvent.id}
+          targetTitle={viewingAttendeesEvent.title}
+          targetDate={viewingAttendeesEvent.date}
+          targetTime={viewingAttendeesEvent.time}
+          targetLocation={viewingAttendeesEvent.location}
+          targetDistrict={viewingAttendeesEvent.district}
+          targetSport={viewingAttendeesEvent.sport}
+          capacity={viewingAttendeesEvent.expectedParticipants || 100}
+          onClose={() => setViewingAttendeesEvent(null)}
+        />
       )}
     </section>
   );

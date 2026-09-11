@@ -16,7 +16,8 @@ import {
   publishImportedEvents,
   generateSampleEventsExcelBuffer,
   generateEmptyEventsTemplateExcelBuffer,
-  exportEventsToExcelBuffer
+  exportEventsToExcelBuffer,
+  exportRegistrationsToExcelBuffer
 } from './server/importEngine.ts';
 import { initMediaFolders, analyzeFileName, processZipArchive } from './server/mediaEngine.ts';
 
@@ -150,6 +151,47 @@ app.get('/api/schedules/:id', (req, res) => {
   res.json(item);
 });
 
+// Registrations for specific schedule
+app.get('/api/schedules/:id/registrations', (req, res) => {
+  const regs = db.getRegistrations({ targetType: 'schedule', targetId: req.params.id });
+  res.json(regs);
+});
+
+// Public sign-up / enrollment for a schedule workout
+app.post('/api/schedules/:id/register', (req, res) => {
+  try {
+    const item = db.getScheduleById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Занятие не найдено' });
+
+    const { fullName, phone, email, participantsCount, comment } = req.body;
+    if (!fullName || !phone) {
+      return res.status(400).json({ error: 'Пожалуйста, укажите имя и контактный телефон' });
+    }
+
+    const reg = db.addRegistration({
+      targetType: 'schedule',
+      targetId: item.id,
+      targetTitle: item.title,
+      targetDate: item.date,
+      targetTime: item.time,
+      targetLocation: item.location,
+      targetDistrict: item.district,
+      targetSport: item.sport,
+      fullName: String(fullName).trim(),
+      phone: String(phone).trim(),
+      email: email ? String(email).trim() : '',
+      participantsCount: parseInt(participantsCount, 10) || 1,
+      comment: comment ? String(comment).trim() : '',
+      status: 'confirmed'
+    });
+
+    const updatedSchedule = db.getScheduleById(req.params.id);
+    res.status(201).json({ success: true, registration: reg, schedule: updatedSchedule });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || 'Ошибка записи на занятие' });
+  }
+});
+
 app.post('/api/schedules', requireAdmin, (req, res) => {
   try {
     const created = db.addSchedule(req.body);
@@ -215,12 +257,124 @@ app.get('/api/events/:id', (req, res) => {
   res.json(item);
 });
 
+// Registrations for specific event
+app.get('/api/events/:id/registrations', (req, res) => {
+  const regs = db.getRegistrations({ targetType: 'event', targetId: req.params.id });
+  res.json(regs);
+});
+
+// Public sign-up / enrollment for an event
 app.post('/api/events/:id/register', (req, res) => {
-  const item = db.getEventById(req.params.id);
-  if (!item) return res.status(404).json({ error: 'Мероприятие не найдено' });
-  const updatedCount = (item.registeredCount || 0) + 1;
-  const updated = db.updateEvent(req.params.id, { registeredCount: updatedCount });
-  res.json({ success: true, registeredCount: updatedCount, event: updated });
+  try {
+    const item = db.getEventById(req.params.id);
+    if (!item) return res.status(404).json({ error: 'Мероприятие не найдено' });
+
+    const fullName = req.body.fullName || req.body.name;
+    const phone = req.body.phone;
+    const email = req.body.email;
+    const participantsCount = req.body.participantsCount || req.body.participants;
+    const comment = req.body.comment;
+
+    if (!fullName || !phone) {
+      return res.status(400).json({ error: 'Пожалуйста, укажите имя и контактный телефон' });
+    }
+
+    const reg = db.addRegistration({
+      targetType: 'event',
+      targetId: item.id,
+      targetTitle: item.title,
+      targetDate: item.date,
+      targetTime: item.time,
+      targetLocation: item.location,
+      targetDistrict: item.district,
+      targetSport: item.sport,
+      fullName: String(fullName).trim(),
+      phone: String(phone).trim(),
+      email: email ? String(email).trim() : '',
+      participantsCount: parseInt(participantsCount, 10) || 1,
+      comment: comment ? String(comment).trim() : '',
+      status: 'confirmed'
+    });
+
+    const updatedEvent = db.getEventById(req.params.id);
+    res.status(201).json({
+      success: true,
+      registeredCount: updatedEvent?.registeredCount,
+      registration: reg,
+      event: updatedEvent
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message || 'Ошибка регистрации на мероприятие' });
+  }
+});
+
+// --- Registrations Hub (Учет записавшихся) ---
+app.get('/api/registrations', (req, res) => {
+  const { targetType, targetId, search, status, district } = req.query;
+  const registrations = db.getRegistrations({
+    targetType: targetType as any,
+    targetId: targetId as string,
+    search: search as string,
+    status: status as string,
+    district: district as string
+  });
+  res.json(registrations);
+});
+
+// Export registrations to Excel (.xlsx)
+app.get(['/api/registrations/export.xlsx', '/api/registrations/export-excel'], (req, res) => {
+  try {
+    const { targetType, targetId, search, status, district } = req.query;
+    const registrations = db.getRegistrations({
+      targetType: targetType as any,
+      targetId: targetId as string,
+      search: search as string,
+      status: status as string,
+      district: district as string
+    });
+    const buffer = exportRegistrationsToExcelBuffer(registrations);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', 'attachment; filename="Zapisavshiesya_Uchastniki_Novosibirsk.xlsx"; filename*=UTF-8\'\'Zapisavshiesya_Uchastniki_Novosibirsk.xlsx');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Length', buffer.length);
+    res.end(buffer);
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/registrations', (req, res) => {
+  try {
+    const { targetType, targetId, fullName, phone } = req.body;
+    if (!targetType || !targetId || !fullName || !phone) {
+      return res.status(400).json({ error: 'Необходимо указать тип, ID события/занятия, ФИО и телефон' });
+    }
+    const created = db.addRegistration(req.body);
+    res.status(201).json(created);
+  } catch (e: any) {
+    res.status(400).json({ error: e.message || 'Ошибка создания записи' });
+  }
+});
+
+app.put('/api/registrations/:id', (req, res) => {
+  const updated = db.updateRegistration(req.params.id, req.body);
+  if (!updated) return res.status(404).json({ error: 'Запись не найдена' });
+  res.json(updated);
+});
+
+app.delete('/api/registrations/:id', (req, res) => {
+  const success = db.deleteRegistration(req.params.id);
+  if (!success) return res.status(404).json({ error: 'Запись не найдена' });
+  res.json({ success: true, id: req.params.id });
+});
+
+app.post('/api/registrations/batch-delete', requireAdmin, (req, res) => {
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'Не указаны ID записей' });
+  }
+  const deletedCount = db.deleteRegistrationsBatch(ids);
+  res.json({ success: true, deletedCount });
 });
 
 app.post('/api/events', requireAdmin, (req, res) => {

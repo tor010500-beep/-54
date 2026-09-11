@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import mammoth from 'mammoth';
-import { ImportRow, ImportPreviewResult, ScheduleItem, SportEventItem } from '../src/types/index.ts';
+import { ImportRow, ImportPreviewResult, ScheduleItem, SportEventItem, ParticipantRegistration } from '../src/types/index.ts';
 import { db, INITIAL_DISTRICTS } from './db.ts';
 
 // Canonical Novosibirsk districts
@@ -833,19 +833,19 @@ export function analyzeImportEventsRows(
       if (!field || field === 'unmapped') continue;
 
       if (field === 'date') {
-        const { date, isExact } = normalizeDate(strVal);
+        const date = normalizeDate(strVal);
         normalized.date = date;
         if (!date) {
           errors.push({ field: 'date', message: `Некорректный формат даты: "${strVal}". Ожидается ГГГГ-ММ-ДД или ДД.ММ.ГГГГ`, severity: 'error' });
-        } else if (!isExact) {
+        } else if (date !== strVal) {
           errors.push({ field: 'date', message: `Дата скорректирована автоматически: "${strVal}" -> "${date}"`, severity: 'warning' });
         }
       } else if (field === 'time') {
-        const { time, isExact } = normalizeTime(strVal);
+        const time = normalizeTime(strVal);
         normalized.time = time;
         if (!time) {
           errors.push({ field: 'time', message: `Некорректный формат времени: "${strVal}". Ожидается ЧЧ:ММ`, severity: 'error' });
-        } else if (!isExact) {
+        } else if (time !== strVal) {
           errors.push({ field: 'time', message: `Время приведено к стандарту: "${time}"`, severity: 'warning' });
         }
       } else if (field === 'district') {
@@ -1227,5 +1227,57 @@ export function exportEventsToExcelBuffer(items: SportEventItem[]): Buffer {
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Мероприятия Новосибирск');
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+}
+
+/**
+ * Export registered attendees list to Excel (.xlsx)
+ */
+export function exportRegistrationsToExcelBuffer(items: ParticipantRegistration[]): Buffer {
+  const rows = items.map(reg => ({
+    'ID Записи': reg.id,
+    'Категория': reg.targetType === 'schedule' ? 'Занятие (Расписание)' : 'Мероприятие (Турнир/Событие)',
+    'Название': reg.targetTitle,
+    'Вид спорта': reg.targetSport || '',
+    'Дата проведения': reg.targetDate,
+    'Время': reg.targetTime,
+    'Район': reg.targetDistrict,
+    'Площадка / Адрес': reg.targetLocation,
+    'ФИО участника': reg.fullName,
+    'Телефон': reg.phone,
+    'Email': reg.email || '',
+    'Количество участников': reg.participantsCount || 1,
+    'Статус': reg.status === 'confirmed' ? 'Подтвержден' :
+              reg.status === 'pending' ? 'Ожидает подтверждения' :
+              reg.status === 'attended' ? 'Присутствовал' : 'Отменен',
+    'Дата и время записи': new Date(reg.registeredAt).toLocaleString('ru-RU'),
+    'Комментарий жителя': reg.comment || '',
+    'Заметки по связи': reg.contactNotes || '',
+    'Последний контакт': reg.lastContactedAt ? new Date(reg.lastContactedAt).toLocaleString('ru-RU') : ''
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 14 },
+    { wch: 26 },
+    { wch: 38 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 10 },
+    { wch: 18 },
+    { wch: 32 },
+    { wch: 30 },
+    { wch: 20 },
+    { wch: 26 },
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 35 },
+    { wch: 35 },
+    { wch: 22 }
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Записавшиеся участники');
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }

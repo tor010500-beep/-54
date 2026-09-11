@@ -8,9 +8,10 @@ import {
   MediaItem,
   ImportHistoryItem,
   PortalStats,
-  SportEventItem
+  SportEventItem,
+  ParticipantRegistration
 } from '../src/types/index.ts';
-import { INITIAL_EVENTS } from '../src/data/initialData.ts';
+import { INITIAL_EVENTS, INITIAL_REGISTRATIONS } from '../src/data/initialData.ts';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'database.json');
@@ -19,6 +20,7 @@ const SNAPSHOTS_DIR = path.join(DATA_DIR, 'snapshots');
 export interface DatabaseSchema {
   schedules: ScheduleItem[];
   events: SportEventItem[];
+  registrations: ParticipantRegistration[];
   districts: District[];
   locations: SportsVenue[];
   news: NewsItem[];
@@ -688,6 +690,7 @@ class Database {
   constructor() {
     this.ensureDirs();
     this.data = this.loadData();
+    this.ensureCompleteRegistrations();
   }
 
   private ensureDirs() {
@@ -712,6 +715,10 @@ class Database {
           parsed.events = INITIAL_EVENTS;
           this.saveData(parsed);
         }
+        if (!parsed.registrations || !Array.isArray(parsed.registrations) || parsed.registrations.length === 0) {
+          parsed.registrations = INITIAL_REGISTRATIONS;
+          this.saveData(parsed);
+        }
         return parsed;
       }
     } catch (e) {
@@ -721,6 +728,7 @@ class Database {
     const defaultData: DatabaseSchema = {
       schedules: INITIAL_SCHEDULES,
       events: INITIAL_EVENTS,
+      registrations: INITIAL_REGISTRATIONS,
       districts: INITIAL_DISTRICTS,
       locations: INITIAL_LOCATIONS,
       news: INITIAL_NEWS,
@@ -1232,6 +1240,517 @@ class Database {
     return this.data.importHistory;
   }
 
+  // --- Registrations (Учет записавшихся на занятия и мероприятия) ---
+  private transliterate(str: string): string {
+    const ru: Record<string, string> = {
+      'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+      'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+      'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts',
+      'ч': 'ch', 'ш': 'sh', 'щ': 'shch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya'
+    };
+    return str.toLowerCase().split('').map(c => ru[c] || c).join('').replace(/[^a-z0-9]/g, '');
+  }
+
+  private generateMockRegistrationsForSchedule(
+    sch: ScheduleItem,
+    count: number,
+    startIdx: number
+  ): ParticipantRegistration[] {
+    const FIRST_NAMES_MALE = [
+      'Алексей', 'Дмитрий', 'Сергей', 'Андрей', 'Михаил', 'Александр', 'Артем', 'Максим',
+      'Денис', 'Роман', 'Евгений', 'Павел', 'Константин', 'Владислав', 'Никита', 'Антон',
+      'Кирилл', 'Егор', 'Олег', 'Виктор', 'Владимир', 'Тимофей', 'Ярослав', 'Иван',
+      'Григорий', 'Василий', 'Борис', 'Юрий', 'Станислав', 'Валерий'
+    ];
+    const FIRST_NAMES_FEMALE = [
+      'Елена', 'Ольга', 'Анна', 'Татьяна', 'Наталья', 'Екатерина', 'Ирина', 'Светлана',
+      'Мария', 'Марина', 'Юлия', 'Анастасия', 'Дарья', 'Надежда', 'Вероника', 'Виктория',
+      'Ксения', 'Полина', 'Людмила', 'Алена', 'Валерия', 'Кристина', 'Маргарита', 'Тамара',
+      'Любовь', 'Валентина', 'Инна', 'Лариса', 'Галина', 'Алиса'
+    ];
+    const PATRONYMICS_MALE = [
+      'Александрович', 'Алексеевич', 'Дмитриевич', 'Сергеевич', 'Андреевич', 'Михайлович',
+      'Иванович', 'Артемович', 'Максимович', 'Денисович', 'Николаевич', 'Владимирович',
+      'Павлович', 'Игоревич', 'Викторович', 'Олегович', 'Юрьевич', 'Григорьевич'
+    ];
+    const PATRONYMICS_FEMALE = [
+      'Александровна', 'Алексеевна', 'Дмитриевна', 'Сергеевна', 'Андреевна', 'Михайловна',
+      'Ивановна', 'Артемовна', 'Максимовна', 'Денисовна', 'Николаевна', 'Владимировна',
+      'Павловна', 'Игоревна', 'Викторовна', 'Олеговна', 'Юрьевна', 'Григорьевна'
+    ];
+    const LAST_NAMES_MALE = [
+      'Иванов', 'Смирнов', 'Кузнецов', 'Попов', 'Васильев', 'Петров', 'Соколов', 'Михайлов',
+      'Новиков', 'Федоров', 'Морозов', 'Волков', 'Алексеев', 'Лебедев', 'Семенов', 'Егоров',
+      'Павлов', 'Козлов', 'Степанов', 'Николаев', 'Орлов', 'Андреев', 'Макаров', 'Никитин',
+      'Захаров', 'Зайцев', 'Соловьев', 'Борисов', 'Яковлев', 'Григорьев', 'Романов', 'Ковалев',
+      'Белов', 'Тарасов', 'Ильин', 'Медведев', 'Антонов', 'Кузьмин', 'Баранов', 'Фролов'
+    ];
+    const LAST_NAMES_FEMALE = [
+      'Иванова', 'Смирнова', 'Кузнецова', 'Попова', 'Васильева', 'Петрова', 'Соколова', 'Михайлова',
+      'Новикова', 'Федорова', 'Морозова', 'Волкова', 'Алексеева', 'Лебедева', 'Семенова', 'Егорова',
+      'Павлова', 'Козлова', 'Степанова', 'Николаева', 'Орлова', 'Андреева', 'Макарова', 'Никитина',
+      'Захарова', 'Зайцева', 'Соловьева', 'Борисова', 'Яковлева', 'Григорьева', 'Романова', 'Ковалева',
+      'Белова', 'Тарасова', 'Ильина', 'Медведева', 'Антонова', 'Кузьмина', 'Баранова', 'Фролова'
+    ];
+    const COMMENTS_POOL = [
+      'Беру собственный коврик для занятий',
+      'Первый раз на тренировке, очень жду',
+      'Уточните, пожалуйста, точное место сбора группы',
+      'Приду вовремя, подтверждаю участие',
+      'Был на предыдущем занятии, очень понравилось',
+      'Нужна ли предварительная разминка дома?',
+      'Есть ли поблизости раздевалка?',
+      'Занимаюсь второй сезон подряд',
+      'Потребуется ли собственный инвентарь?',
+      'Спасибо за организацию бесплатных секций!',
+      'Приду пешком из соседнего квартала',
+      'Удобный формат и отличное время тренировки',
+      ''
+    ];
+    const PHONE_PREFIXES = ['913', '923', '952', '953', '903', '905', '983'];
+    const EMAIL_DOMAINS = ['mail.ru', 'yandex.ru', 'bk.ru', 'gmail.com'];
+
+    const results: ParticipantRegistration[] = [];
+    const hash = (str: string) => {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
+      return Math.abs(h);
+    };
+
+    for (let i = 0; i < count; i++) {
+      const idx = startIdx + i + 1;
+      const seed = hash(`${sch.id}-${idx}`);
+      const isFemale = seed % 2 === 0;
+
+      const fn = isFemale
+        ? FIRST_NAMES_FEMALE[seed % FIRST_NAMES_FEMALE.length]
+        : FIRST_NAMES_MALE[seed % FIRST_NAMES_MALE.length];
+      const pn = isFemale
+        ? PATRONYMICS_FEMALE[(seed >> 3) % PATRONYMICS_FEMALE.length]
+        : PATRONYMICS_MALE[(seed >> 3) % PATRONYMICS_MALE.length];
+      const ln = isFemale
+        ? LAST_NAMES_FEMALE[(seed >> 6) % LAST_NAMES_FEMALE.length]
+        : LAST_NAMES_MALE[(seed >> 6) % LAST_NAMES_MALE.length];
+
+      const prefix = PHONE_PREFIXES[seed % PHONE_PREFIXES.length];
+      const p1 = String((seed % 899) + 100);
+      const p2 = String(((seed >> 4) % 89) + 10);
+      const p3 = String(((seed >> 8) % 89) + 10);
+      const phone = `+7 (${prefix}) ${p1}-${p2}-${p3}`;
+
+      const domain = EMAIL_DOMAINS[seed % EMAIL_DOMAINS.length];
+      const email = `${this.transliterate(fn)}.${this.transliterate(ln)}@${domain}`;
+
+      const daysOffset = (seed % 4) + 1;
+      const hoursOffset = (seed % 12) + 8;
+      const minsOffset = (seed % 50) + 10;
+      const regDate = new Date('2026-09-08T00:00:00Z');
+      regDate.setDate(regDate.getDate() - daysOffset);
+      regDate.setHours(hoursOffset, minsOffset, 0, 0);
+
+      const statusVal = (seed % 10 < 8) ? 'confirmed' : (seed % 10 === 8 ? 'attended' : 'pending');
+      const comment = COMMENTS_POOL[seed % COMMENTS_POOL.length];
+
+      results.push({
+        id: `reg-${sch.id}-${idx}`,
+        targetType: 'schedule',
+        targetId: sch.id,
+        targetTitle: sch.title,
+        targetDate: sch.date,
+        targetTime: sch.time,
+        targetLocation: sch.location,
+        targetDistrict: sch.district,
+        targetSport: sch.sport,
+        fullName: `${ln} ${fn} ${pn}`,
+        phone,
+        email: (seed % 5 !== 0) ? email : '',
+        participantsCount: 1,
+        comment: comment || undefined,
+        status: statusVal as any,
+        registeredAt: regDate.toISOString(),
+        contactNotes: statusVal === 'confirmed' && (seed % 3 === 0) ? 'Подтверждено по телефону' : undefined
+      });
+    }
+
+    return results;
+  }
+
+  private generateMockRegistrationsForEvent(
+    ev: SportEventItem,
+    count: number,
+    startIdx: number
+  ): ParticipantRegistration[] {
+    const FIRST_NAMES_MALE = [
+      'Алексей', 'Дмитрий', 'Сергей', 'Андрей', 'Михаил', 'Александр', 'Артем', 'Максим',
+      'Денис', 'Роман', 'Евгений', 'Павел', 'Константин', 'Владислав', 'Никита', 'Антон',
+      'Кирилл', 'Егор', 'Олег', 'Виктор', 'Владимир', 'Тимофей', 'Ярослав', 'Иван'
+    ];
+    const FIRST_NAMES_FEMALE = [
+      'Елена', 'Ольга', 'Анна', 'Татьяна', 'Наталья', 'Екатерина', 'Ирина', 'Светлана',
+      'Мария', 'Марина', 'Юлия', 'Анастасия', 'Дарья', 'Надежда', 'Вероника', 'Виктория',
+      'Ксения', 'Полина', 'Людмила', 'Алена', 'Валерия', 'Кристина', 'Маргарита', 'Тамара'
+    ];
+    const PATRONYMICS_MALE = [
+      'Александрович', 'Алексеевич', 'Дмитриевич', 'Сергеевич', 'Андреевич', 'Михайлович',
+      'Иванович', 'Артемович', 'Максимович', 'Денисович', 'Николаевич', 'Владимирович'
+    ];
+    const PATRONYMICS_FEMALE = [
+      'Александровна', 'Алексеевна', 'Дмитриевна', 'Сергеевна', 'Андреевна', 'Михайловна',
+      'Ивановна', 'Артемовна', 'Максимовна', 'Денисовна', 'Николаевна', 'Владимировна'
+    ];
+    const LAST_NAMES_MALE = [
+      'Иванов', 'Смирнов', 'Кузнецов', 'Попов', 'Васильев', 'Петров', 'Соколов', 'Михайлов',
+      'Новиков', 'Федоров', 'Морозов', 'Волков', 'Алексеев', 'Лебедев', 'Семенов', 'Егоров',
+      'Павлов', 'Козлов', 'Степанов', 'Николаев', 'Орлов', 'Андреев', 'Макаров', 'Никитин'
+    ];
+    const LAST_NAMES_FEMALE = [
+      'Иванова', 'Смирнова', 'Кузнецова', 'Попова', 'Васильева', 'Петрова', 'Соколова', 'Михайлова',
+      'Новикова', 'Федорова', 'Морозова', 'Волкова', 'Алексеева', 'Лебедева', 'Семенова', 'Егорова',
+      'Павлова', 'Козлова', 'Степанова', 'Николаева', 'Орлова', 'Андреева', 'Макарова', 'Никитина'
+    ];
+    const EVENT_COMMENTS_POOL = [
+      'Участвую в индивидуальном зачете',
+      'Команда любителей, готовы к старту',
+      'Семейный зачет: папа, мама и ребенок',
+      'Медицинская справка оформлена',
+      'Участвуем ежегодно, отличная организация!',
+      'Прошу прислать стартовый протокол на email',
+      'Нужна ли предварительная регистрация на месте?'
+    ];
+    const PHONE_PREFIXES = ['913', '923', '952', '953', '903', '905', '983'];
+    const EMAIL_DOMAINS = ['mail.ru', 'yandex.ru', 'gmail.com'];
+
+    const results: ParticipantRegistration[] = [];
+    const hash = (str: string) => {
+      let h = 0;
+      for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) & 0xffffffff;
+      return Math.abs(h);
+    };
+
+    for (let i = 0; i < count; i++) {
+      const idx = startIdx + i + 1;
+      const seed = hash(`${ev.id}-${idx}`);
+      const isFemale = seed % 2 === 0;
+
+      const fn = isFemale
+        ? FIRST_NAMES_FEMALE[seed % FIRST_NAMES_FEMALE.length]
+        : FIRST_NAMES_MALE[seed % FIRST_NAMES_MALE.length];
+      const pn = isFemale
+        ? PATRONYMICS_FEMALE[(seed >> 3) % PATRONYMICS_FEMALE.length]
+        : PATRONYMICS_MALE[(seed >> 3) % PATRONYMICS_MALE.length];
+      const ln = isFemale
+        ? LAST_NAMES_FEMALE[(seed >> 6) % LAST_NAMES_FEMALE.length]
+        : LAST_NAMES_MALE[(seed >> 6) % LAST_NAMES_MALE.length];
+
+      const prefix = PHONE_PREFIXES[seed % PHONE_PREFIXES.length];
+      const p1 = String((seed % 899) + 100);
+      const p2 = String(((seed >> 4) % 89) + 10);
+      const p3 = String(((seed >> 8) % 89) + 10);
+      const phone = `+7 (${prefix}) ${p1}-${p2}-${p3}`;
+
+      const domain = EMAIL_DOMAINS[seed % EMAIL_DOMAINS.length];
+      const email = `${this.transliterate(fn)}.${this.transliterate(ln)}@${domain}`;
+
+      const daysOffset = (seed % 6) + 1;
+      const regDate = new Date('2026-09-08T00:00:00Z');
+      regDate.setDate(regDate.getDate() - daysOffset);
+      regDate.setHours((seed % 10) + 9, (seed % 50) + 5, 0, 0);
+
+      const statusVal = (seed % 10 < 8) ? 'confirmed' : (seed % 10 === 8 ? 'attended' : 'pending');
+      const pCount = (seed % 4 === 0) ? 2 : (seed % 9 === 0 ? 3 : 1);
+      const comment = EVENT_COMMENTS_POOL[seed % EVENT_COMMENTS_POOL.length];
+
+      results.push({
+        id: `reg-${ev.id}-${idx}`,
+        targetType: 'event',
+        targetId: ev.id,
+        targetTitle: ev.title,
+        targetDate: ev.date,
+        targetTime: ev.time,
+        targetLocation: ev.location,
+        targetDistrict: ev.district,
+        targetSport: ev.sport,
+        fullName: `${ln} ${fn} ${pn}`,
+        phone,
+        email,
+        participantsCount: pCount,
+        comment: comment || undefined,
+        status: statusVal as any,
+        registeredAt: regDate.toISOString(),
+        contactNotes: statusVal === 'confirmed' ? 'Участие подтверждено' : undefined
+      });
+    }
+
+    return results;
+  }
+
+  public ensureScheduleRegistrations(scheduleId: string): void {
+    const sch = this.getScheduleById(scheduleId);
+    if (!sch) return;
+
+    if (!this.data.registrations) {
+      this.data.registrations = [];
+    }
+
+    const existing = this.data.registrations.filter(
+      r => r.targetType === 'schedule' && r.targetId === scheduleId
+    );
+    const existingCount = existing.reduce((sum, r) => sum + (r.participantsCount || 1), 0);
+    const targetEnrolled = sch.enrolled || 0;
+
+    if (existingCount < targetEnrolled) {
+      const needed = targetEnrolled - existingCount;
+      const generated = this.generateMockRegistrationsForSchedule(sch, needed, existing.length);
+      this.data.registrations.push(...generated);
+      this.saveData();
+    } else if (existingCount > targetEnrolled && targetEnrolled > 0) {
+      sch.enrolled = existingCount;
+      this.saveData();
+    }
+  }
+
+  public ensureEventRegistrations(eventId: string): void {
+    const ev = this.getEventById(eventId);
+    if (!ev) return;
+
+    if (!this.data.registrations) {
+      this.data.registrations = [];
+    }
+
+    const existing = this.data.registrations.filter(
+      r => r.targetType === 'event' && r.targetId === eventId
+    );
+    const targetMin = Math.min(25, ev.registeredCount || 20);
+    if (existing.length < targetMin) {
+      const needed = targetMin - existing.length;
+      const generated = this.generateMockRegistrationsForEvent(ev, needed, existing.length);
+      this.data.registrations.push(...generated);
+      this.saveData();
+    }
+  }
+
+  public ensureCompleteRegistrations(): void {
+    if (!this.data.registrations) {
+      this.data.registrations = [];
+    }
+    let changed = false;
+
+    // 1. Ensure all schedules have complete participant records for all enrolled
+    for (const sch of (this.data.schedules || [])) {
+      const existing = this.data.registrations.filter(
+        r => r.targetType === 'schedule' && r.targetId === sch.id
+      );
+      const existingCount = existing.reduce((sum, r) => sum + (r.participantsCount || 1), 0);
+      const targetEnrolled = sch.enrolled || 0;
+
+      if (existingCount < targetEnrolled) {
+        const needed = targetEnrolled - existingCount;
+        const generated = this.generateMockRegistrationsForSchedule(sch, needed, existing.length);
+        this.data.registrations.push(...generated);
+        changed = true;
+      } else if (existingCount > targetEnrolled && targetEnrolled > 0) {
+        sch.enrolled = existingCount;
+        changed = true;
+      }
+    }
+
+    // 2. Ensure all events have rich participant records for attendees modal
+    for (const ev of (this.data.events || [])) {
+      const existing = this.data.registrations.filter(
+        r => r.targetType === 'event' && r.targetId === ev.id
+      );
+      const targetMin = Math.min(25, ev.registeredCount || 20);
+      if (existing.length < targetMin) {
+        const needed = targetMin - existing.length;
+        const generated = this.generateMockRegistrationsForEvent(ev, needed, existing.length);
+        this.data.registrations.push(...generated);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.saveData();
+    }
+  }
+
+  public getRegistrations(filters?: {
+    targetType?: 'schedule' | 'event';
+    targetId?: string;
+    search?: string;
+    status?: string;
+    district?: string;
+  }): ParticipantRegistration[] {
+    if (filters?.targetType === 'schedule' && filters?.targetId) {
+      this.ensureScheduleRegistrations(filters.targetId);
+    } else if (filters?.targetType === 'event' && filters?.targetId) {
+      this.ensureEventRegistrations(filters.targetId);
+    } else if (!filters?.targetId) {
+      this.ensureCompleteRegistrations();
+    }
+
+    let result = [...(this.data.registrations || [])];
+
+    if (filters) {
+      if (filters.targetType) {
+        result = result.filter(r => r.targetType === filters.targetType);
+      }
+      if (filters.targetId) {
+        result = result.filter(r => r.targetId === filters.targetId);
+      }
+      if (filters.status && filters.status !== 'all') {
+        result = result.filter(r => r.status === filters.status);
+      }
+      if (filters.district && filters.district !== 'Все районы') {
+        result = result.filter(r => r.targetDistrict === filters.district);
+      }
+      if (filters.search) {
+        const q = filters.search.toLowerCase().trim();
+        result = result.filter(r =>
+          r.fullName.toLowerCase().includes(q) ||
+          r.phone.toLowerCase().includes(q) ||
+          (r.email && r.email.toLowerCase().includes(q)) ||
+          r.targetTitle.toLowerCase().includes(q) ||
+          r.targetLocation.toLowerCase().includes(q) ||
+          (r.comment && r.comment.toLowerCase().includes(q)) ||
+          (r.contactNotes && r.contactNotes.toLowerCase().includes(q))
+        );
+      }
+    }
+
+    // Sort newest registrations first
+    result.sort((a, b) => new Date(b.registeredAt).getTime() - new Date(a.registeredAt).getTime());
+    return result;
+  }
+
+  public getRegistrationById(id: string): ParticipantRegistration | undefined {
+    return (this.data.registrations || []).find(r => r.id === id);
+  }
+
+  public addRegistration(data: {
+    targetType: 'schedule' | 'event';
+    targetId: string;
+    targetTitle?: string;
+    targetDate?: string;
+    targetTime?: string;
+    targetLocation?: string;
+    targetDistrict?: string;
+    targetSport?: string;
+    fullName: string;
+    phone: string;
+    email?: string;
+    participantsCount?: number;
+    comment?: string;
+    status?: 'confirmed' | 'pending' | 'attended' | 'cancelled';
+    contactNotes?: string;
+  }): ParticipantRegistration {
+    if (!this.data.registrations) {
+      this.data.registrations = [];
+    }
+
+    let title = data.targetTitle || '';
+    let date = data.targetDate || '';
+    let time = data.targetTime || '';
+    let location = data.targetLocation || '';
+    let district = data.targetDistrict || '';
+    let sport = data.targetSport || '';
+
+    // If target details weren't passed, lookup from schedule or event
+    if (data.targetType === 'schedule') {
+      const sch = this.getScheduleById(data.targetId);
+      if (sch) {
+        title = title || sch.title;
+        date = date || sch.date;
+        time = time || sch.time;
+        location = location || sch.location;
+        district = district || sch.district;
+        sport = sport || sch.sport;
+        sch.enrolled = (sch.enrolled || 0) + (data.participantsCount || 1);
+      }
+    } else if (data.targetType === 'event') {
+      const ev = this.getEventById(data.targetId);
+      if (ev) {
+        title = title || ev.title;
+        date = date || ev.date;
+        time = time || ev.time;
+        location = location || ev.location;
+        district = district || ev.district;
+        sport = sport || ev.sport;
+        ev.registeredCount = (ev.registeredCount || 0) + (data.participantsCount || 1);
+      }
+    }
+
+    const newReg: ParticipantRegistration = {
+      id: `reg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      targetType: data.targetType,
+      targetId: data.targetId,
+      targetTitle: title,
+      targetDate: date,
+      targetTime: time,
+      targetLocation: location,
+      targetDistrict: district,
+      targetSport: sport,
+      fullName: data.fullName,
+      phone: data.phone,
+      email: data.email || '',
+      participantsCount: data.participantsCount && data.participantsCount > 0 ? data.participantsCount : 1,
+      comment: data.comment || '',
+      status: data.status || 'confirmed',
+      registeredAt: new Date().toISOString(),
+      contactNotes: data.contactNotes || ''
+    };
+
+    this.data.registrations.unshift(newReg);
+    this.saveData();
+    return newReg;
+  }
+
+  public updateRegistration(id: string, updates: Partial<ParticipantRegistration>): ParticipantRegistration | null {
+    if (!this.data.registrations) return null;
+    const idx = this.data.registrations.findIndex(r => r.id === id);
+    if (idx === -1) return null;
+
+    this.data.registrations[idx] = {
+      ...this.data.registrations[idx],
+      ...updates
+    };
+    this.saveData();
+    return this.data.registrations[idx];
+  }
+
+  public deleteRegistration(id: string): boolean {
+    if (!this.data.registrations) return false;
+    const reg = this.data.registrations.find(r => r.id === id);
+    if (!reg) return false;
+
+    // Adjust target count
+    if (reg.targetType === 'schedule') {
+      const sch = this.getScheduleById(reg.targetId);
+      if (sch && sch.enrolled) {
+        sch.enrolled = Math.max(0, sch.enrolled - (reg.participantsCount || 1));
+      }
+    } else if (reg.targetType === 'event') {
+      const ev = this.getEventById(reg.targetId);
+      if (ev && ev.registeredCount) {
+        ev.registeredCount = Math.max(0, ev.registeredCount - (reg.participantsCount || 1));
+      }
+    }
+
+    this.data.registrations = this.data.registrations.filter(r => r.id !== id);
+    this.saveData();
+    return true;
+  }
+
+  public deleteRegistrationsBatch(ids: string[]): number {
+    if (!this.data.registrations || !Array.isArray(ids) || ids.length === 0) return 0;
+    let count = 0;
+    for (const id of ids) {
+      if (this.deleteRegistration(id)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   // --- Stats ---
   public getStats(): PortalStats {
     return {
@@ -1240,6 +1759,7 @@ class Database {
       locationsCount: this.data.locations.length,
       mediaCount: this.data.media.length,
       newsCount: this.data.news.length,
+      registrationsCount: (this.data.registrations || []).length,
       lastUpdated: this.data.settings.lastUpdated || '08.09.2026'
     };
   }
