@@ -111,7 +111,7 @@ export const ScheduleRegistrationModal: React.FC<ScheduleRegistrationModalProps>
     const icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Спорт Новосибирск//Расписание занятий//RU',
+      'PRODID:-//Спорт Новосибирск//Спортивный календарь//RU',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
       'BEGIN:VEVENT',

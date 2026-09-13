@@ -1208,7 +1208,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
               }`}
             >
               <Calendar className="w-4 h-4" />
-              <span>Расписание занятий</span>
+              <span>Спортивный календарь</span>
               <span className={`ml-auto text-[11px] px-2 py-0.5 rounded-full ${
                 activeTab === 'schedules' ? 'bg-blue-700 text-white' : 'bg-slate-100 text-slate-600'
               }`}>
@@ -1416,7 +1416,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({
             <div className="space-y-6 max-w-7xl mx-auto w-full min-w-0">
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4">
                 <div className="min-w-0">
-                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Расписание занятий</h2>
+                  <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Спортивный календарь</h2>
                   <p className="text-xs text-slate-500">
                     Управление тренировками во всех районах Новосибирска. Всего: {schedules.length}
                   </p>

@@ -219,10 +219,10 @@ export const ScheduleSection: React.FC<ScheduleSectionProps> = ({
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-bold uppercase tracking-wider mb-2">
               <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
-              <span>Единое расписание города</span>
+              <span>Единый спортивный календарь города</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-              Интерактивное расписание
+              Спортивный календарь
             </h2>
             <p className="text-slate-600 mt-1 text-base max-w-xl">
               Найдено актуальных занятий: <span className="font-bold text-blue-600">{filteredSchedules.length}</span> из {schedules.length}

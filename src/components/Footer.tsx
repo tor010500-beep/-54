@@ -68,7 +68,7 @@ export const Footer: React.FC<FooterProps> = ({ onScrollToTop, onNavigate, onOpe
               </li>
               <li>
                 <button type="button" onClick={() => onNavigate('schedule')} className="hover:text-sky-400 transition-colors cursor-pointer">
-                  Расписание занятий
+                  Спортивный календарь
                 </button>
               </li>
               <li>

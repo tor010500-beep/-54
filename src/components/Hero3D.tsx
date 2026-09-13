@@ -128,9 +128,9 @@ export const Hero3D: React.FC<Hero3DProps> = ({
           {/* Heading */}
           <div className="space-y-2">
             <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-tight text-slate-900 leading-[1.05]">
-              РАСПИСАНИЕ <br />
+              СПОРТИВНЫЙ <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-sky-600 to-teal-500">
-                ЗАНЯТИЙ
+                КАЛЕНДАРЬ
               </span>
             </h1>
             <p className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-tight flex items-center justify-center lg:justify-start gap-2">
@@ -155,7 +155,7 @@ export const Hero3D: React.FC<Hero3DProps> = ({
               className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-gradient-to-r from-blue-600 to-sky-600 hover:from-blue-700 hover:to-sky-700 text-white font-bold text-sm sm:text-base shadow-lg shadow-sky-500/25 hover:shadow-sky-500/35 transition-all duration-200 flex items-center justify-center gap-2 group cursor-pointer"
             >
               <Calendar className="w-4 h-4 group-hover:scale-110 transition-transform" />
-              <span>Расписание занятий</span>
+              <span>Спортивный календарь</span>
               <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
 

@@ -77,8 +77,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               onClick={() => handleNavClick('schedule')}
               className="text-xs xl:text-sm font-semibold text-slate-700 hover:text-blue-600 transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <span>Расписание</span>
-              <span className="hidden xl:inline"> занятий</span>
+              <span>Спортивный календарь</span>
             </button>
             <button
               id="nav-link-events"
@@ -164,7 +163,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             onClick={() => handleNavClick('schedule')}
             className="w-full text-left py-2 px-3 rounded-lg text-sm font-semibold text-slate-800 hover:bg-slate-50"
           >
-            Расписание занятий
+            Спортивный календарь
           </button>
           <button
             type="button"

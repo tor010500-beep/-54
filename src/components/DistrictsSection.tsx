@@ -106,7 +106,7 @@ export const DistrictsSection: React.FC<DistrictsSectionProps> = ({
                       }}
                       className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200 hover:border-blue-600 font-bold text-xs transition-all duration-200 flex items-center justify-center gap-1.5 shadow-sm group-hover:shadow cursor-pointer"
                     >
-                      <span>Смотреть расписание</span>
+                      <span>Смотреть календарь</span>
                       <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
                     </button>
                   </div>
